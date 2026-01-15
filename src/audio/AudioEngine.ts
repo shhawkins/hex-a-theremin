@@ -96,6 +96,8 @@ export class AudioEngine {
   private mixBus: Tone.Gain;
   private effectBus: Tone.Gain;
   private toneFilter: Tone.Filter; // New Tone Filter
+  private compressor: Tone.Compressor;
+  private limiter: Tone.Limiter;
 
   private voices: Map<number, Voice> = new Map();
   private currentVoiceType: VoiceType = 'sine';
@@ -119,7 +121,16 @@ export class AudioEngine {
   private constructor() {
     this.context = Tone.context;
 
-    this.mixBus = new Tone.Gain(1).toDestination();
+    // Mastering Chain
+    this.limiter = new Tone.Limiter(-0.5).toDestination();
+    this.compressor = new Tone.Compressor({
+      threshold: -24,
+      ratio: 6,
+      attack: 0.05,
+      release: 0.25
+    }).connect(this.limiter);
+
+    this.mixBus = new Tone.Gain(0.3).connect(this.compressor); // Lowered main mix further to prevent clipping
     this.waveform = new Tone.Waveform(512);
     this.mixBus.connect(this.waveform);
 
@@ -135,7 +146,8 @@ export class AudioEngine {
     this.mainBus.connect(this.recorder);
 
     for (let i = 0; i < 4; i++) {
-      const vol = new Tone.Gain(0.8).connect(this.mixBus);
+      // Lower default track volume slightly to leave headroom
+      const vol = new Tone.Gain(0.7).connect(this.mixBus);
       this.tracks.push({
         id: uuidv4(),
         player: new Tone.Player(),
@@ -266,6 +278,24 @@ export class AudioEngine {
       setTimeout(() => v.dispose(), 200);
     });
     this.voices.clear();
+  }
+
+  public reset() {
+    this.releaseAll();
+    this.clearAllLoops();
+
+    // Reset effects
+    this.effects.forEach(e => e?.dispose());
+    this.effects = [null, null, null, null, null, null];
+    this.rebuildEffectChain();
+
+    // Reset Tone / Filter
+    this.toneFilter.frequency.value = 20000;
+
+    // Restart Transport
+    Tone.Transport.stop();
+    Tone.Transport.position = 0;
+    Tone.Transport.start();
   }
 
   // --- Looper Logic ---

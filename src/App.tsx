@@ -6,7 +6,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { RotaryDial } from './components/RotaryDial';
 import { EFFECT_TYPES, type EffectType } from './audio/effects';
 import type { Point } from './utils/geometry';
-import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Sliders } from 'lucide-react';
+import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Sliders, RefreshCcw } from 'lucide-react';
 import { EffectsControlPanel } from './components/EffectsControlPanel';
 import { clsx } from 'clsx';
 
@@ -81,9 +81,7 @@ function App() {
     const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState(false);
     const [activeEffectIndex, setActiveEffectIndex] = useState<number | null>(null);
     const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
-    const [modulations, setModulations] = useState<{ x: boolean, y: boolean }[]>(
-        Array(6).fill({ x: false, y: false })
-    );
+    const [paramModulations, setParamModulations] = useState<Record<string, { x: boolean, y: boolean }>>({});
 
     useEffect(() => {
         if (started) {
@@ -100,11 +98,23 @@ function App() {
     }, []);
 
     const isMobile = dimensions.width < 600;
-    const hexScale = isMobile ? 0.28 : 0.35;
+    const isLandscape = dimensions.width > dimensions.height && dimensions.width >= 600;
+    const isPortraitTablet = !isMobile && !isLandscape;
+
+    // Hexagon sizing: maximize while leaving room for UI
+    const hexScale = isMobile ? 0.28 : isLandscape ? 0.38 : 0.32;
     const hexRadius = Math.min(dimensions.width, dimensions.height) * hexScale;
+
+    // Position hexagon based on layout
     const center = {
-        x: dimensions.width / 2,
-        y: dimensions.height / 2 + (isMobile ? 80 : 0) // Shift down on mobile
+        x: isLandscape
+            ? dimensions.width / 2 + 100 // Shift right for sidebar in landscape
+            : dimensions.width / 2,
+        y: isMobile
+            ? dimensions.height / 2 + 80
+            : isPortraitTablet
+                ? dimensions.height / 2 + 105 // Shift down for top panel in portrait tablet
+                : dimensions.height / 2
     };
 
     const sideColors = ['#00f0ff', '#ff0055', '#ccff00', '#aa00ff', '#ffffff', '#ffaa00'];
@@ -140,7 +150,8 @@ function App() {
         for (let i = 0; i < 6; i++) {
             const angleDeg = 60 * i + 30;
             const angleRad = (angleDeg * Math.PI) / 180;
-            const dist = hexRadius + (isMobile ? 35 : 55);
+            // Increased distance to prevent badge overlap with hexagon border
+            const dist = hexRadius + (isMobile ? 45 : 70);
             positions.push({
                 x: center.x + dist * Math.cos(angleRad),
                 y: center.y + dist * Math.sin(angleRad),
@@ -184,7 +195,7 @@ function App() {
                     colors={sideColors}
                     ghostNotesEnabled={ghostNotesEnabled}
                     octaveRange={octave}
-                    modulations={modulations}
+                    paramModulations={paramModulations}
                     masterVolume={masterVolume}
                     volMod={volMod}
                     toneMod={toneMod}
@@ -200,6 +211,16 @@ function App() {
                 onClose={() => setIsEffectsPanelOpen(false)}
                 activeEffectIndex={activeEffectIndex}
                 onEffectChange={handleEffectChange}
+                paramModulations={paramModulations}
+                onModulationChange={(key, axis) => {
+                    setParamModulations(prev => {
+                        const current = prev[key] || { x: false, y: false };
+                        return {
+                            ...prev,
+                            [key]: { ...current, [axis]: !current[axis] }
+                        };
+                    });
+                }}
             />
 
             {/* Effect Menus - Overlay */}
@@ -215,7 +236,7 @@ function App() {
                         }}
                     >
                         <select
-                            className="w-full bg-black/60 border border-white/10 text-gray-300 text-[9px] uppercase outline-none backdrop-blur-sm appearance-none text-center cursor-pointer transition-all hover:bg-black/80 hover:text-white rounded py-1"
+                            className="w-full bg-black/60 border border-white/10 text-gray-300 text-[9px] uppercase outline-none backdrop-blur-sm appearance-none text-center cursor-pointer transition-all hover:bg-black/80 hover:text-white rounded py-1 pl-2"
                             value={effects[i] || ''}
                             onChange={(e) => handleEffectChange(i, e.target.value)}
                             style={{
@@ -223,7 +244,9 @@ function App() {
                             }}
                         >
                             {availableEffects(i).map(eff => (
-                                <option key={eff} value={eff}>{eff}</option>
+                                <option key={eff} value={eff}>
+                                    {eff.replace('JCReverb', 'Reverb').replace('FeedbackDelay', 'Delay').replace('PingPongDelay', 'PingPong')}
+                                </option>
                             ))}
                         </select>
 
@@ -249,21 +272,25 @@ function App() {
                                 )}>
                                     <button
                                         className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                            modulations[i].x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            paramModulations[`${i}:wet`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
                                         onClick={() => {
-                                            const newMods = [...modulations];
-                                            newMods[i] = { ...newMods[i], x: !newMods[i].x };
-                                            setModulations(newMods);
+                                            const key = `${i}:wet`;
+                                            setParamModulations(prev => {
+                                                const current = prev[key] || { x: false, y: false };
+                                                return { ...prev, [key]: { ...current, x: !current.x } };
+                                            });
                                         }}
                                         title="Modulate with Volume (X Axis)"
                                     >X</button>
                                     <button
                                         className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                            modulations[i].y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            paramModulations[`${i}:wet`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
                                         onClick={() => {
-                                            const newMods = [...modulations];
-                                            newMods[i] = { ...newMods[i], y: !newMods[i].y };
-                                            setModulations(newMods);
+                                            const key = `${i}:wet`;
+                                            setParamModulations(prev => {
+                                                const current = prev[key] || { x: false, y: false };
+                                                return { ...prev, [key]: { ...current, y: !current.y } };
+                                            });
                                         }}
                                         title="Modulate with Pitch (Y Axis)"
                                     >Y</button>
@@ -284,127 +311,157 @@ function App() {
                 ))}
             </div>
 
-            {/* LEFT PANEL: Settings */}
-            <div className={clsx("absolute top-2 z-40 pointer-events-none transition-all duration-300", isMobile ? "left-2 right-2" : "top-4 left-4 w-56")}>
-                <GlassPanel
-                    title="HEXSYNTH"
-                    icon={SettingsIcon}
-                    isOpen={isSettingsOpen}
-                    onToggle={() => setIsSettingsOpen(!isSettingsOpen)}
-                >
-                    <div className={clsx("font-mono transition-all", isMobile ? "py-1.5" : "py-2 flex flex-col gap-4")}>
-                        {/* Mobile Layout Grouping */}
-                        <div className={clsx(isMobile ? "flex flex-col gap-2" : "contents")}>
+            {/* SETTINGS PANEL: Responsive Placement */}
+            <div className={clsx(
+                "absolute z-40 pointer-events-none transition-all duration-300",
+                isLandscape ? "top-4 left-4 w-64" : "top-6 left-2 right-2 flex justify-center"
+            )}>
+                <div className={clsx("pointer-events-auto", !isLandscape && "w-full max-w-[500px]")}>
+                    <GlassPanel
+                        title="HEXSYNTH"
+                        icon={SettingsIcon}
+                        isOpen={isSettingsOpen}
+                        onToggle={() => setIsSettingsOpen(!isSettingsOpen)}
+                    >
+                        <div className="py-1.5 font-mono transition-all">
+                            <div className="flex flex-col gap-2">
 
-                            {/* Row 1: Waveform & Octave */}
-                            <div className={clsx("flex gap-3", isMobile ? "items-center" : "flex-col gap-4")}>
-                                <div className={clsx("space-y-1", isMobile ? "flex-1" : "")}>
-                                    <label className="text-[9px] uppercase text-gray-500 tracking-wider flex justify-between">
-                                        <span>Waveform</span>
-                                    </label>
-                                    <select
-                                        value={voiceType}
-                                        onChange={e => { setVoiceType(e.target.value as any); engine.setVoiceType(e.target.value as any); }}
-                                        className="select-minimal w-full px-2 py-1 text-[10px] rounded-sm"
-                                    >
-                                        <option value="sine">Sine Wave</option>
-                                        <option value="triangle">Triangle</option>
-                                        <option value="sawtooth">Sawtooth</option>
-                                        <option value="square">Square</option>
-                                        <option value="pulse">Pulse Width</option>
-                                        <option value="fmsynth">FM Synth</option>
-                                        <option value="amsynth">AM Synth</option>
-                                        <option value="membrane">Membrane</option>
-                                        <option value="metal">Metal</option>
-                                    </select>
-                                </div>
+                                {/* Row 1: Waveform & Octave (+ Reset Button) */}
+                                <div className="flex gap-3 items-end">
+                                    <div className="flex-1 space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[9px] uppercase text-gray-500 tracking-wider">
+                                                Waveform
+                                            </label>
+                                            {/* Reset Button moved here */}
+                                            <button
+                                                onClick={() => {
+                                                    engine.reset();
 
-                                <div className={clsx("space-y-1", isMobile ? "flex-[0.8]" : "space-y-2")}>
-                                    <div className="flex justify-between items-center text-[9px] uppercase text-gray-500">
-                                        <span>Octave</span>
-                                        <span className="text-white font-bold">{octave}</span>
+                                                    // Reset State
+                                                    setEffects([...INITIAL_EFFECTS]);
+                                                    setParamModulations({});
+                                                    setVolMod({ x: true, y: false });
+                                                    setToneMod({ x: false, y: false });
+                                                    setVoiceType('sine');
+                                                    setOctave(2);
+                                                    setTone(0.8);
+                                                    setMasterVolume(0.8);
+                                                    setRootNote('C');
+                                                    setBadgePos(center); // Reset badge position
+
+                                                    engine.rootFreq = 261.63;
+                                                    engine.octaveRange = 2;
+                                                    engine.setVoiceType('sine');
+
+                                                    INITIAL_EFFECTS.forEach((eff, i) => engine.setEffect(i, eff));
+                                                }}
+                                                className="text-red-500 hover:text-red-300 transition-colors p-1"
+                                                title="Reset System"
+                                            >
+                                                <RefreshCcw size={12} />
+                                            </button>
+                                        </div>
+                                        <select
+                                            value={voiceType}
+                                            onChange={e => { setVoiceType(e.target.value as any); engine.setVoiceType(e.target.value as any); }}
+                                            className="select-minimal w-full px-2 py-1 text-[10px] rounded-sm"
+                                        >
+                                            <option value="sine">Sine Wave</option>
+                                            <option value="triangle">Triangle</option>
+                                            <option value="sawtooth">Sawtooth</option>
+                                            <option value="square">Square</option>
+                                            <option value="pulse">Pulse Width</option>
+                                            <option value="fmsynth">FM Synth</option>
+                                            <option value="amsynth">AM Synth</option>
+                                            <option value="membrane">Membrane</option>
+                                            <option value="metal">Metal</option>
+                                        </select>
                                     </div>
-                                    <input
-                                        type="range" min="1" max="5" step="1"
-                                        value={octave}
-                                        onChange={e => {
-                                            const v = parseInt(e.target.value);
-                                            setOctave(v);
-                                            engine.octaveRange = v;
-                                        }}
-                                        className="slider-minimal w-full"
-                                    />
-                                </div>
-                            </div>
 
-                            {/* Row 2: Controls */}
-                            <div className={clsx("flex gap-2", isMobile ? "justify-between items-end border-t border-white/5 pt-2" : "justify-center items-end pt-2")}>
-                                {/* Volume Control */}
-                                <div className="flex flex-col items-center gap-1">
-                                    {!isMobile && <span className="text-[9px] text-gray-500 uppercase">Vol</span>}
-                                    <RotaryDial
-                                        label={isMobile ? "VOL" : undefined}
-                                        value={Math.round(masterVolume * 100).toString()}
-                                        options={[]}
-                                        onChange={() => { }}
-                                        continuous={true}
-                                        min={0}
-                                        max={1}
-                                        val={masterVolume}
-                                        onValueChange={setMasterVolume}
-                                        size={isMobile ? 32 : 40}
-                                    />
-                                    <div className="flex gap-1">
-                                        <button
-                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                                volMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                            onClick={() => setVolMod(p => ({ ...p, x: !p.x }))}
-                                            title="Modulate with X"
-                                        >X</button>
-                                        <button
-                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                                volMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                            onClick={() => setVolMod(p => ({ ...p, y: !p.y }))}
-                                            title="Modulate with Y"
-                                        >Y</button>
-                                    </div>
-                                </div>
-
-                                {/* Tone Control */}
-                                <div className="flex flex-col items-center gap-1">
-                                    {!isMobile && <span className="text-[9px] text-gray-500 uppercase">Tone</span>}
-                                    <RotaryDial
-                                        label={isMobile ? "TONE" : undefined}
-                                        value={Math.round(tone * 100).toString()}
-                                        options={[]} // Continuous dial simulation
-                                        onChange={() => { /* handled by onValueChange */ }}
-                                        continuous={true}
-                                        min={0}
-                                        max={1}
-                                        val={tone}
-                                        onValueChange={(v) => {
-                                            setTone(v);
-                                        }}
-                                        size={isMobile ? 32 : 40}
-                                    />
-                                    <div className="flex gap-1">
-                                        <button
-                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                                toneMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                            onClick={() => setToneMod(p => ({ ...p, x: !p.x }))}
-                                            title="Modulate with X"
-                                        >X</button>
-                                        <button
-                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                                toneMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                            onClick={() => setToneMod(p => ({ ...p, y: !p.y }))}
-                                            title="Modulate with Y"
-                                        >Y</button>
+                                    <div className="flex-[0.8] space-y-1">
+                                        <div className="flex justify-between items-center text-[9px] uppercase text-gray-500">
+                                            <span>Octave</span>
+                                            <span className="text-white font-bold">{octave}</span>
+                                        </div>
+                                        <input
+                                            type="range" min="1" max="5" step="1"
+                                            value={octave}
+                                            onChange={e => {
+                                                const v = parseInt(e.target.value);
+                                                setOctave(v);
+                                                engine.octaveRange = v;
+                                            }}
+                                            className="slider-minimal w-full"
+                                        />
                                     </div>
                                 </div>
 
-                                {/* Root: Horizontal Dial (Slider) for Mobile */}
-                                {isMobile ? (
+                                {/* Row 2: Controls */}
+                                <div className="flex gap-2 justify-between items-end border-t border-white/5 pt-2">
+                                    {/* Volume Control */}
+                                    <div className="flex flex-col items-center gap-1">
+                                        <RotaryDial
+                                            label="VOL"
+                                            value={Math.round(masterVolume * 100).toString()}
+                                            options={[]}
+                                            onChange={() => { }}
+                                            continuous={true}
+                                            min={0}
+                                            max={1}
+                                            val={masterVolume}
+                                            onValueChange={setMasterVolume}
+                                            size={32}
+                                        />
+                                        <div className="flex gap-1">
+                                            <button
+                                                className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                    volMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                onClick={() => setVolMod(p => ({ ...p, x: !p.x }))}
+                                                title="Modulate with X"
+                                            >X</button>
+                                            <button
+                                                className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                    volMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                onClick={() => setVolMod(p => ({ ...p, y: !p.y }))}
+                                                title="Modulate with Y"
+                                            >Y</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Tone Control */}
+                                    <div className="flex flex-col items-center gap-1">
+                                        <RotaryDial
+                                            label="TONE"
+                                            value={Math.round(tone * 100).toString()}
+                                            options={[]} // Continuous dial simulation
+                                            onChange={() => { /* handled by onValueChange */ }}
+                                            continuous={true}
+                                            min={0}
+                                            max={1}
+                                            val={tone}
+                                            onValueChange={(v) => {
+                                                setTone(v);
+                                            }}
+                                            size={32}
+                                        />
+                                        <div className="flex gap-1">
+                                            <button
+                                                className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                    toneMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                onClick={() => setToneMod(p => ({ ...p, x: !p.x }))}
+                                                title="Modulate with X"
+                                            >X</button>
+                                            <button
+                                                className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                    toneMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                onClick={() => setToneMod(p => ({ ...p, y: !p.y }))}
+                                                title="Modulate with Y"
+                                            >Y</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Root: Horizontal Dial (Slider) - Standardized */}
                                     <div className="flex-1 flex flex-col justify-end pl-3 ml-1 border-l border-white/5 h-full min-w-[100px]">
                                         <div className="flex justify-between text-[8px] uppercase text-gray-500 mb-1.5">
                                             <span>Root</span>
@@ -436,24 +493,11 @@ function App() {
                                             ))}
                                         </div>
                                     </div>
-                                ) : (
-                                    <RotaryDial
-                                        label="ROOT"
-                                        value={rootNote}
-                                        options={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']}
-                                        onChange={(n) => {
-                                            setRootNote(n);
-                                            const idx = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(n);
-                                            const freq = 261.63 * Math.pow(2, idx / 12);
-                                            engine.rootFreq = freq;
-                                        }}
-                                        size={40}
-                                    />
-                                )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </GlassPanel>
+                    </GlassPanel>
+                </div>
             </div>
 
             {/* RIGHT TOP PANEL: Telemetry - HIDDEN */}

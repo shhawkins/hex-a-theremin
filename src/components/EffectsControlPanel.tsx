@@ -2,83 +2,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Sliders } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AudioEngine } from '../audio/AudioEngine';
-import { EFFECT_TYPES, type EffectType } from '../audio/effects';
+import { EFFECT_TYPES, type EffectType, EFFECT_PARAMS } from '../audio/effects';
 
 interface EffectsControlPanelProps {
     engine: AudioEngine;
     isOpen: boolean;
     onClose: () => void;
-    activeEffectIndex: number | null; // If user clicked a specific small button
+    activeEffectIndex: number | null;
     onEffectChange: (index: number, type: EffectType) => void;
+    paramModulations: Record<string, { x: boolean, y: boolean }>;
+    onModulationChange: (key: string, axis: 'x' | 'y') => void;
 }
 
-// Parameter definitions for each effect type
-const EFFECT_PARAMS: Record<EffectType, { name: string; key: string; min: number; max: number; step: number; suffix?: string }[]> = {
-    'AutoFilter': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 },
-        { name: 'Base Freq', key: 'baseFrequency', min: 20, max: 1000, step: 10, suffix: 'Hz' }
-    ],
-    'AutoPanner': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
-    ],
-    'AutoWah': [
-        { name: 'Base Freq', key: 'baseFrequency', min: 20, max: 1000, step: 10, suffix: 'Hz' },
-        { name: 'Octaves', key: 'octaves', min: 1, max: 8, step: 1 },
-        { name: 'Sensitivity', key: 'sensitivity', min: -40, max: 0, step: 1, suffix: 'dB' },
-        { name: 'Q', key: 'Q', min: 0, max: 10, step: 0.1 }
-    ],
-    'BitCrusher': [
-        { name: 'Bits', key: 'bits', min: 1, max: 16, step: 1 }
-    ],
-    'Chebyshev': [
-        { name: 'Order', key: 'order', min: 1, max: 100, step: 1 }
-    ],
-    'Chorus': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Delay Time', key: 'delayTime', min: 2, max: 20, step: 0.5, suffix: 'ms' },
-        { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
-    ],
-    'Distortion': [
-        { name: 'Distortion', key: 'distortion', min: 0, max: 1, step: 0.05 }
-    ],
-    'FeedbackDelay': [
-        { name: 'Delay Time', key: 'delayTime', min: 0, max: 1, step: 0.05, suffix: 's' },
-        { name: 'Feedback', key: 'feedback', min: 0, max: 1, step: 0.05 }
-    ],
-    'JCReverb': [
-        { name: 'Room Size', key: 'roomSize', min: 0, max: 1, step: 0.05 }
-    ],
-    'FrequencyShifter': [
-        { name: 'Frequency', key: 'frequency', min: -1000, max: 1000, step: 10, suffix: 'Hz' }
-    ],
-    'Phaser': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Octaves', key: 'octaves', min: 1, max: 8, step: 1 },
-        { name: 'Base Freq', key: 'baseFrequency', min: 20, max: 1000, step: 10, suffix: 'Hz' }
-    ],
-    'PingPongDelay': [
-        { name: 'Delay Time', key: 'delayTime', min: 0, max: 1, step: 0.05, suffix: 's' },
-        { name: 'Feedback', key: 'feedback', min: 0, max: 1, step: 0.05 }
-    ],
-    'StereoWidener': [
-        { name: 'Width', key: 'width', min: 0, max: 1, step: 0.05 }
-    ],
-    'PitchShift': [
-        { name: 'Pitch', key: 'pitch', min: -12, max: 12, step: 1, suffix: 'st' }
-    ],
-    'Tremolo': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
-    ],
-    'Vibrato': [
-        { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
-        { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
-    ]
-};
 
-export const EffectsControlPanel: React.FC<EffectsControlPanelProps> = ({ engine, isOpen, onClose, activeEffectIndex, onEffectChange }) => {
+
+export const EffectsControlPanel: React.FC<EffectsControlPanelProps> = ({ engine, isOpen, onClose, activeEffectIndex, onEffectChange, paramModulations, onModulationChange }) => {
     const [selectedSlot, setSelectedSlot] = useState<number>(0);
     const [position, setPosition] = useState({ x: 100, y: 100 });
 
@@ -203,6 +141,8 @@ export const EffectsControlPanel: React.FC<EffectsControlPanelProps> = ({ engine
                             effect={currentEffect}
                             index={selectedSlot}
                             effectName={currentEffect.name.replace('Tone.', '') as EffectType}
+                            paramModulations={paramModulations}
+                            onModulationChange={onModulationChange}
                         />
                     ) : (
                         <div className="h-full flex items-center justify-center text-gray-600 text-[10px] uppercase tracking-widest">
@@ -215,7 +155,14 @@ export const EffectsControlPanel: React.FC<EffectsControlPanelProps> = ({ engine
     );
 };
 
-const EffectControls = ({ engine, effect, index, effectName }: { engine: AudioEngine, effect: any, index: number, effectName: EffectType }) => {
+const EffectControls = ({ engine, effect, index, effectName, paramModulations, onModulationChange }: {
+    engine: AudioEngine,
+    effect: any,
+    index: number,
+    effectName: EffectType,
+    paramModulations: Record<string, { x: boolean, y: boolean }>,
+    onModulationChange: (key: string, axis: 'x' | 'y') => void
+}) => {
     const params = EFFECT_PARAMS[effectName] || [];
     // Force update for sliders
     const [, setTick] = useState(0);
@@ -235,9 +182,11 @@ const EffectControls = ({ engine, effect, index, effectName }: { engine: AudioEn
             <div className="grid grid-cols-1 gap-6">
                 {/* Always show Mix/Wet */}
                 <div className="space-y-2">
-                    <div className="flex justify-between text-[10px] uppercase text-gray-400">
+                    <div className="flex justify-between items-end text-[10px] uppercase text-gray-400">
                         <span>Mix (Wet)</span>
-                        <span className="text-hex-accent">{Math.round((effect.wet.value || 0) * 100)}%</span>
+                        <div className="flex gap-2 items-center">
+                            <span className="text-hex-accent">{Math.round((effect.wet.value || 0) * 100)}%</span>
+                        </div>
                     </div>
                     <input
                         type="range" min="0" max="1" step="0.01"
@@ -248,6 +197,18 @@ const EffectControls = ({ engine, effect, index, effectName }: { engine: AudioEn
                         }}
                         className="slider-minimal w-full"
                     />
+                    <div className="flex justify-end gap-1">
+                        <button
+                            className={clsx("text-[9px] px-2 py-0.5 rounded border transition-colors font-mono",
+                                paramModulations[`${index}:wet`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                            onClick={() => onModulationChange(`${index}:wet`, 'x')}
+                        >X</button>
+                        <button
+                            className={clsx("text-[9px] px-2 py-0.5 rounded border transition-colors font-mono",
+                                paramModulations[`${index}:wet`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                            onClick={() => onModulationChange(`${index}:wet`, 'y')}
+                        >Y</button>
+                    </div>
                 </div>
 
                 {params.map(p => {
@@ -278,6 +239,18 @@ const EffectControls = ({ engine, effect, index, effectName }: { engine: AudioEn
                                 onChange={(e) => handleChange(p.key, parseFloat(e.target.value))}
                                 className="slider-minimal w-full"
                             />
+                            <div className="flex justify-end gap-1">
+                                <button
+                                    className={clsx("text-[9px] px-2 py-0.5 rounded border transition-colors font-mono",
+                                        paramModulations[`${index}:${p.key}`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                    onClick={() => onModulationChange(`${index}:${p.key}`, 'x')}
+                                >X</button>
+                                <button
+                                    className={clsx("text-[9px] px-2 py-0.5 rounded border transition-colors font-mono",
+                                        paramModulations[`${index}:${p.key}`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                    onClick={() => onModulationChange(`${index}:${p.key}`, 'y')}
+                                >Y</button>
+                            </div>
                         </div>
                     );
                 })}

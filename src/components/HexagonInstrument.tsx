@@ -3,6 +3,8 @@ import { AudioEngine } from '../audio/AudioEngine';
 import { getHexagonVertices, isPointInHexagon, getDistancesToSides, type Point, SQRT3 } from '../utils/geometry';
 import * as Tone from 'tone';
 
+import { EFFECT_PARAMS, type EffectType } from '../audio/effects';
+
 interface HexagonInstrumentProps {
   engine: AudioEngine;
   width: number;
@@ -12,7 +14,7 @@ interface HexagonInstrumentProps {
   colors: string[];
   ghostNotesEnabled: boolean;
   octaveRange: number;
-  modulations: { x: boolean, y: boolean }[];
+  paramModulations: Record<string, { x: boolean, y: boolean }>;
   masterVolume: number;
   volMod: { x: boolean, y: boolean };
   toneMod: { x: boolean, y: boolean };
@@ -37,7 +39,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   colors: propColors,
   ghostNotesEnabled,
   octaveRange,
-  modulations,
+  paramModulations,
   masterVolume,
   volMod,
   toneMod,
@@ -213,32 +215,53 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     engine.startNote(id, freq, vol);
 
     // Apply Modulations
-    // Note: If multiple touches, the last one updates the effects.
-    // If we want multiple touches to average, we'd need more logic, but "last takes precedence" is standard for single-parameter control.
-    modulations.forEach((mod, i) => {
-      if (mod.x || mod.y) {
-        let strength = 0;
-        // Strategy: additive or max?
-        // If X and Y are both active, maybe average?
-        // "Tie any effect to x or y".
-        // If X (Pitch) is active, Pitch drives it.
-        // If Y (Vol) is active, Vol drives it.
+    // Loop through all 6 effect slots
+    for (let i = 0; i < 6; i++) {
+      const effect = engine.effects[i];
+      if (!effect) continue;
 
-        // Re-normalize for effect strength (0-1)
+      // 1. Check Mix/Wet Modulation
+      const wetMod = paramModulations[`${i}:wet`];
+      if (wetMod && (wetMod.x || wetMod.y)) {
+        let strength = 0;
         const pitchStrength = Math.max(0, Math.min(1, normY));
         const volStrength = Math.max(0, Math.min(1, normX));
 
-        if (mod.x && mod.y) {
+        if (wetMod.x && wetMod.y) {
           strength = (pitchStrength + volStrength) / 2;
-        } else if (mod.x) {
-          strength = volStrength; // X Axis (Volume)
-        } else if (mod.y) {
-          strength = pitchStrength; // Y Axis (Pitch)
+        } else if (wetMod.x) {
+          strength = volStrength;
+        } else if (wetMod.y) {
+          strength = pitchStrength;
         }
-
         engine.updateEffectParameter(i, strength);
       }
-    });
+
+      // 2. Check Specific Parameters
+      const typeName = effect.name.replace('Tone.', '') as EffectType;
+      const params = EFFECT_PARAMS[typeName] || [];
+
+      params.forEach((p) => {
+        const pMod = paramModulations[`${i}:${p.key}`];
+        if (pMod && (pMod.x || pMod.y)) {
+          let strength = 0; // 0..1
+          const pitchStrength = Math.max(0, Math.min(1, normY));
+          const volStrength = Math.max(0, Math.min(1, normX));
+
+          if (pMod.x && pMod.y) {
+            strength = (pitchStrength + volStrength) / 2;
+          } else if (pMod.x) {
+            strength = volStrength;
+          } else if (pMod.y) {
+            strength = pitchStrength;
+          }
+
+          // Map 0..1 to Min..Max
+          const val = p.min + strength * (p.max - p.min);
+          engine.setEffectParam(i, p.key, val);
+        }
+      });
+    }
   };
 
   const updateEffectsFromBadge = (pos: Point) => {
@@ -246,9 +269,9 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     const maxDist = radius;
 
     dists.forEach((d, i) => {
-      // Only update from badge if modulation is NOT active for this effect
-      // This prevents fighting between badge position and note modulation
-      if (!modulations[i].x && !modulations[i].y) {
+      // Only update from badge if modulation is NOT active for this effect's MIX (Wet)
+      const wetMod = paramModulations[`${i}:wet`];
+      if (!wetMod || (!wetMod.x && !wetMod.y)) {
         const strength = Math.max(0, 1 - (d / maxDist));
         engine.updateEffectParameter(i, strength);
       }
