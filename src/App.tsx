@@ -20,7 +20,7 @@ interface ModulationState {
     yInv: boolean;
     p: boolean; // Pressure
 }
-import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Settings, RefreshCcw } from 'lucide-react';
+import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Settings, RefreshCcw, HelpCircle } from 'lucide-react';
 import { EffectsControlPanel } from './components/EffectsControlPanel';
 import { RegionSelector, type RegionType } from './components/RegionSelector';
 import { clsx } from 'clsx';
@@ -90,6 +90,8 @@ const getCenter = (w: number, h: number) => {
 
 function App() {
     const [started, setStarted] = useState(false);
+    const [showHelpModal, setShowHelpModal] = useState(false); // For manual help trigger after started
+    const isReturningUser = localStorage.getItem('hex-synth-onboarded') === 'true';
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [effects, setEffects] = useState<(EffectType | null)[]>(INITIAL_EFFECTS);
     // Initialize badge at correct center
@@ -183,6 +185,8 @@ function App() {
     const handleStart = async () => {
         await engine.start();
         setStarted(true);
+        setShowHelpModal(false);
+        localStorage.setItem('hex-synth-onboarded', 'true');
     };
 
     // Track which effect slots are animating (for swap animation)
@@ -277,12 +281,31 @@ function App() {
         }
     };
 
-    if (!started) {
-        return <OnboardingModal onStart={handleStart} />;
-    }
-
     return (
         <div className="relative h-screen w-full bg-hex-bg overflow-hidden font-sans text-xs text-hex-text select-none">
+
+            {/* Onboarding/Start Modal - Always shows before started, or when help is triggered */}
+            {(!started || showHelpModal) && (
+                <OnboardingModal
+                    onStart={() => {
+                        handleStart();
+                        setShowHelpModal(false);
+                    }}
+                    isReturningUser={started ? false : isReturningUser}
+                    skipDelay={showHelpModal}
+                />
+            )}
+
+            {/* Help Button - Upper Right */}
+            {started && !showHelpModal && (
+                <button
+                    onClick={() => setShowHelpModal(true)}
+                    className="fixed top-4 right-4 z-40 w-8 h-8 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:bg-black/60 hover:border-white/20 transition-all backdrop-blur-sm"
+                    title="Help"
+                >
+                    <HelpCircle size={14} />
+                </button>
+            )}
 
             {/* Background */}
             <div className="absolute inset-0 pointer-events-none">
@@ -589,9 +612,7 @@ function App() {
                                             <option value="amsynth">AM Synth</option>
                                             <option value="membrane">Membrane</option>
                                             <option value="metal">Metal</option>
-                                            <option value="pluck">Pluck Synth</option>
                                             <option value="duo">Duo Synth</option>
-                                            <option value="noise">Noise Synth</option>
                                         </select>
                                     </div>
 
