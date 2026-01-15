@@ -1,5 +1,5 @@
 import React from 'react';
-import { Power, Move, RotateCw, Activity } from 'lucide-react';
+import { Power, Move, RotateCw, Activity, Sliders } from 'lucide-react';
 
 interface OnboardingModalProps {
     onStart: () => void;
@@ -17,9 +17,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart }) => 
 
                 <div className="flex flex-col items-center mb-10 relative z-10">
                     <h1 className="text-4xl font-light tracking-[0.2em] text-white fade-in drop-shadow-md text-center">
-                        HEXAGON
+                        HEXASYNTH
                     </h1>
-                    <div className="text-xs tracking-[0.4em] text-hex-accent uppercase mt-3 font-semibold">Synthesizer System</div>
+                    <div className="text-xs tracking-[0.4em] text-hex-accent uppercase mt-3 font-semibold">THEREMIN SYNTHESIZER</div>
                 </div>
 
                 <div className="grid gap-5 w-full mb-10 relative z-10">
@@ -29,6 +29,15 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart }) => 
                         </div>
                         <div>
                             <div className="text-[11px] text-white leading-relaxed">Touch & drag anywhere inside the hexagon to play notes</div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 text-gray-300 group">
+                        <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center border border-white/10 shrink-0 mt-0.5">
+                            <Sliders size={16} className="text-hex-accent" />
+                        </div>
+                        <div>
+                            <div className="text-[11px] text-white leading-relaxed">Tie the X/Y axis to any parameter for expressive modulation</div>
                         </div>
                     </div>
 

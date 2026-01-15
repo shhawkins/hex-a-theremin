@@ -80,6 +80,7 @@ function App() {
     const [isLooperOpen, setIsLooperOpen] = useState(true);
     const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState(false);
     const [activeEffectIndex, setActiveEffectIndex] = useState<number | null>(null);
+    const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
     const [modulations, setModulations] = useState<{ x: boolean, y: boolean }[]>(
         Array(6).fill({ x: false, y: false })
     );
@@ -101,7 +102,10 @@ function App() {
     const isMobile = dimensions.width < 600;
     const hexScale = isMobile ? 0.28 : 0.35;
     const hexRadius = Math.min(dimensions.width, dimensions.height) * hexScale;
-    const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
+    const center = {
+        x: dimensions.width / 2,
+        y: dimensions.height / 2 + (isMobile ? 80 : 0) // Shift down on mobile
+    };
 
     const sideColors = ['#00f0ff', '#ff0055', '#ccff00', '#aa00ff', '#ffffff', '#ffaa00'];
 
@@ -186,6 +190,7 @@ function App() {
                     toneMod={toneMod}
                     toneBase={tone}
                     onNoteActive={() => { }}
+                    center={center}
                 />
             </div>
 
@@ -224,37 +229,55 @@ function App() {
 
                         {/* Modulation Controls */}
                         {effects[i] && (
-                            <div className="flex gap-1 mt-1 justify-center">
-                                <button
-                                    className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                        modulations[i].x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                    onClick={() => {
-                                        const newMods = [...modulations];
-                                        newMods[i] = { ...newMods[i], x: !newMods[i].x };
-                                        setModulations(newMods);
-                                    }}
-                                    title="Modulate with Volume (X Axis)"
-                                >X</button>
-                                <button
-                                    className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                        modulations[i].y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                    onClick={() => {
-                                        const newMods = [...modulations];
-                                        newMods[i] = { ...newMods[i], y: !newMods[i].y };
-                                        setModulations(newMods);
-                                    }}
-                                    title="Modulate with Pitch (Y Axis)"
-                                >Y</button>
-                                <button
-                                    className="text-[8px] px-1.5 py-0.5 rounded border border-white/10 bg-black/40 text-gray-500 hover:text-white transition-colors"
-                                    onClick={() => {
-                                        setActiveEffectIndex(i);
-                                        setIsEffectsPanelOpen(true);
-                                    }}
-                                    title="Effect Settings"
-                                >
-                                    <Sliders size={8} />
-                                </button>
+                            <div className="flex flex-col items-center mt-1">
+                                {isMobile && (
+                                    <button
+                                        onClick={() => setExpandedControlId(expandedControlId === i ? null : i)}
+                                        className="text-gray-500 hover:text-white/80 transition-colors p-0.5 active:scale-90"
+                                    >
+                                        <ChevronDown
+                                            size={10}
+                                            className={clsx("transition-transform duration-200", expandedControlId === i && "rotate-180")}
+                                        />
+                                    </button>
+                                )}
+                                <div className={clsx(
+                                    "flex gap-1 justify-center overflow-hidden transition-all duration-200 ease-out",
+                                    isMobile
+                                        ? (expandedControlId === i ? "max-h-8 opacity-100 mt-1" : "max-h-0 opacity-0")
+                                        : "max-h-8 opacity-100 mt-1"
+                                )}>
+                                    <button
+                                        className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
+                                            modulations[i].x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                        onClick={() => {
+                                            const newMods = [...modulations];
+                                            newMods[i] = { ...newMods[i], x: !newMods[i].x };
+                                            setModulations(newMods);
+                                        }}
+                                        title="Modulate with Volume (X Axis)"
+                                    >X</button>
+                                    <button
+                                        className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
+                                            modulations[i].y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                        onClick={() => {
+                                            const newMods = [...modulations];
+                                            newMods[i] = { ...newMods[i], y: !newMods[i].y };
+                                            setModulations(newMods);
+                                        }}
+                                        title="Modulate with Pitch (Y Axis)"
+                                    >Y</button>
+                                    <button
+                                        className="text-[8px] px-1.5 py-0.5 rounded border border-white/10 bg-black/40 text-gray-500 hover:text-white transition-colors"
+                                        onClick={() => {
+                                            setActiveEffectIndex(i);
+                                            setIsEffectsPanelOpen(true);
+                                        }}
+                                        title="Effect Settings"
+                                    >
+                                        <Sliders size={8} />
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -262,128 +285,172 @@ function App() {
             </div>
 
             {/* LEFT PANEL: Settings */}
-            <div className="absolute top-4 left-4 z-40 w-48 sm:w-56 pointer-events-none">
+            <div className={clsx("absolute top-2 z-40 pointer-events-none transition-all duration-300", isMobile ? "left-2 right-2" : "top-4 left-4 w-56")}>
                 <GlassPanel
                     title="SYNTH ENGINE"
                     icon={SettingsIcon}
                     isOpen={isSettingsOpen}
                     onToggle={() => setIsSettingsOpen(!isSettingsOpen)}
                 >
-                    <div className="flex flex-col gap-4 py-2 font-mono">
-                        <div className="space-y-1">
-                            <label className="text-[9px] uppercase text-gray-500 tracking-wider flex justify-between">
-                                <span>Waveform</span>
-                            </label>
-                            <select
-                                value={voiceType}
-                                onChange={e => { setVoiceType(e.target.value as any); engine.setVoiceType(e.target.value as any); }}
-                                className="select-minimal w-full px-2 py-1.5 text-[10px] rounded-sm"
-                            >
-                                <option value="sine">Sine Wave</option>
-                                <option value="triangle">Triangle</option>
-                                <option value="sawtooth">Sawtooth</option>
-                                <option value="square">Square</option>
-                                <option value="pulse">Pulse Width</option>
-                                <option value="fmsynth">FM Synthesis</option>
-                                <option value="amsynth">AM Synthesis</option>
-                                <option value="membrane">Membrane (Perc)</option>
-                                <option value="metal">Metal (Perc)</option>
-                            </select>
-                        </div>
+                    <div className={clsx("font-mono transition-all", isMobile ? "py-1.5" : "py-2 flex flex-col gap-4")}>
+                        {/* Mobile Layout Grouping */}
+                        <div className={clsx(isMobile ? "flex flex-col gap-2" : "contents")}>
 
-                        <div className="space-y-2">
-                            <div className="flex justify-between items-center text-[9px] uppercase text-gray-500">
-                                <span>Octave Range</span>
-                                <span className="text-white font-bold">{octave}</span>
-                            </div>
-                            <input
-                                type="range" min="1" max="5" step="1"
-                                value={octave}
-                                onChange={e => {
-                                    const v = parseInt(e.target.value);
-                                    setOctave(v);
-                                    engine.octaveRange = v;
-                                }}
-                                className="slider-minimal w-full"
-                            />
-                        </div>
+                            {/* Row 1: Waveform & Octave */}
+                            <div className={clsx("flex gap-3", isMobile ? "items-center" : "flex-col gap-4")}>
+                                <div className={clsx("space-y-1", isMobile ? "flex-1" : "")}>
+                                    <label className="text-[9px] uppercase text-gray-500 tracking-wider flex justify-between">
+                                        <span>Waveform</span>
+                                    </label>
+                                    <select
+                                        value={voiceType}
+                                        onChange={e => { setVoiceType(e.target.value as any); engine.setVoiceType(e.target.value as any); }}
+                                        className="select-minimal w-full px-2 py-1 text-[10px] rounded-sm"
+                                    >
+                                        <option value="sine">Sine Wave</option>
+                                        <option value="triangle">Triangle</option>
+                                        <option value="sawtooth">Sawtooth</option>
+                                        <option value="square">Square</option>
+                                        <option value="pulse">Pulse Width</option>
+                                        <option value="fmsynth">FM Synth</option>
+                                        <option value="amsynth">AM Synth</option>
+                                        <option value="membrane">Membrane</option>
+                                        <option value="metal">Metal</option>
+                                    </select>
+                                </div>
 
-                        <div className="flex justify-center items-end gap-2 pt-2">
-                            {/* Volume Control */}
-                            <div className="flex flex-col items-center gap-1">
-                                <RotaryDial
-                                    label="VOL"
-                                    value={Math.round(masterVolume * 100).toString()}
-                                    options={[]}
-                                    onChange={() => { }}
-                                    continuous={true}
-                                    min={0}
-                                    max={1}
-                                    val={masterVolume}
-                                    onValueChange={setMasterVolume}
-                                    size={40}
-                                />
-                                <div className="flex gap-1">
-                                    <button
-                                        className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                            volMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                        onClick={() => setVolMod(p => ({ ...p, x: !p.x }))}
-                                        title="Modulate with X"
-                                    >X</button>
-                                    <button
-                                        className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                            volMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                        onClick={() => setVolMod(p => ({ ...p, y: !p.y }))}
-                                        title="Modulate with Y"
-                                    >Y</button>
+                                <div className={clsx("space-y-1", isMobile ? "flex-[0.8]" : "space-y-2")}>
+                                    <div className="flex justify-between items-center text-[9px] uppercase text-gray-500">
+                                        <span>Octave</span>
+                                        <span className="text-white font-bold">{octave}</span>
+                                    </div>
+                                    <input
+                                        type="range" min="1" max="5" step="1"
+                                        value={octave}
+                                        onChange={e => {
+                                            const v = parseInt(e.target.value);
+                                            setOctave(v);
+                                            engine.octaveRange = v;
+                                        }}
+                                        className="slider-minimal w-full"
+                                    />
                                 </div>
                             </div>
 
-                            {/* Tone Control */}
-                            <div className="flex flex-col items-center gap-1">
-                                <RotaryDial
-                                    label="TONE"
-                                    value={Math.round(tone * 100).toString()}
-                                    options={[]} // Continuous dial simulation
-                                    onChange={() => { /* handled by onValueChange */ }}
-                                    continuous={true}
-                                    min={0}
-                                    max={1}
-                                    val={tone}
-                                    onValueChange={(v) => {
-                                        setTone(v);
-                                        // engine.setTone(v); // Now handled in Instrument
-                                    }}
-                                    size={40}
-                                />
-                                <div className="flex gap-1">
-                                    <button
-                                        className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                            toneMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                        onClick={() => setToneMod(p => ({ ...p, x: !p.x }))}
-                                        title="Modulate with X"
-                                    >X</button>
-                                    <button
-                                        className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
-                                            toneMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                        onClick={() => setToneMod(p => ({ ...p, y: !p.y }))}
-                                        title="Modulate with Y"
-                                    >Y</button>
+                            {/* Row 2: Controls */}
+                            <div className={clsx("flex gap-2", isMobile ? "justify-between items-end border-t border-white/5 pt-2" : "justify-center items-end pt-2")}>
+                                {/* Volume Control */}
+                                <div className="flex flex-col items-center gap-1">
+                                    {!isMobile && <span className="text-[9px] text-gray-500 uppercase">Vol</span>}
+                                    <RotaryDial
+                                        label={isMobile ? "VOL" : undefined}
+                                        value={Math.round(masterVolume * 100).toString()}
+                                        options={[]}
+                                        onChange={() => { }}
+                                        continuous={true}
+                                        min={0}
+                                        max={1}
+                                        val={masterVolume}
+                                        onValueChange={setMasterVolume}
+                                        size={isMobile ? 32 : 40}
+                                    />
+                                    <div className="flex gap-1">
+                                        <button
+                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                volMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            onClick={() => setVolMod(p => ({ ...p, x: !p.x }))}
+                                            title="Modulate with X"
+                                        >X</button>
+                                        <button
+                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                volMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            onClick={() => setVolMod(p => ({ ...p, y: !p.y }))}
+                                            title="Modulate with Y"
+                                        >Y</button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <RotaryDial
-                                label="ROOT"
-                                value={rootNote}
-                                options={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']}
-                                onChange={(n) => {
-                                    setRootNote(n);
-                                    const idx = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(n);
-                                    const freq = 261.63 * Math.pow(2, idx / 12);
-                                    engine.rootFreq = freq;
-                                }}
-                                size={40}
-                            />
+                                {/* Tone Control */}
+                                <div className="flex flex-col items-center gap-1">
+                                    {!isMobile && <span className="text-[9px] text-gray-500 uppercase">Tone</span>}
+                                    <RotaryDial
+                                        label={isMobile ? "TONE" : undefined}
+                                        value={Math.round(tone * 100).toString()}
+                                        options={[]} // Continuous dial simulation
+                                        onChange={() => { /* handled by onValueChange */ }}
+                                        continuous={true}
+                                        min={0}
+                                        max={1}
+                                        val={tone}
+                                        onValueChange={(v) => {
+                                            setTone(v);
+                                        }}
+                                        size={isMobile ? 32 : 40}
+                                    />
+                                    <div className="flex gap-1">
+                                        <button
+                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                toneMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            onClick={() => setToneMod(p => ({ ...p, x: !p.x }))}
+                                            title="Modulate with X"
+                                        >X</button>
+                                        <button
+                                            className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                toneMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                            onClick={() => setToneMod(p => ({ ...p, y: !p.y }))}
+                                            title="Modulate with Y"
+                                        >Y</button>
+                                    </div>
+                                </div>
+
+                                {/* Root: Horizontal Dial (Slider) for Mobile */}
+                                {isMobile ? (
+                                    <div className="flex-1 flex flex-col justify-end pl-3 ml-1 border-l border-white/5 h-full min-w-[100px]">
+                                        <div className="flex justify-between text-[8px] uppercase text-gray-500 mb-1.5">
+                                            <span>Root</span>
+                                            <span className="text-hex-accent font-bold font-mono">{rootNote}</span>
+                                        </div>
+                                        <div className="relative flex items-center">
+                                            <div className="absolute inset-x-0 h-1 bg-white/10 rounded-full overflow-hidden">
+                                                <div className="h-full bg-hex-accent/20"></div>
+                                            </div>
+                                            <input
+                                                type="range" min="0" max="11" step="1"
+                                                value={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(rootNote)}
+                                                onChange={(e) => {
+                                                    const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                                                    const idx = parseInt(e.target.value);
+                                                    const n = notes[idx];
+                                                    setRootNote(n);
+                                                    const freq = 261.63 * Math.pow(2, idx / 12);
+                                                    engine.rootFreq = freq;
+                                                }}
+                                                className="slider-minimal w-full relative z-10"
+                                                style={{ height: '20px' }}
+                                            />
+                                        </div>
+                                        {/* Tick marks */}
+                                        <div className="flex justify-between px-1 mt-0.5 opacity-30">
+                                            {Array(12).fill(0).map((_, i) => (
+                                                <div key={i} className={clsx("w-px bg-white", i % 2 === 0 ? "h-1.5" : "h-0.5")}></div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <RotaryDial
+                                        label="ROOT"
+                                        value={rootNote}
+                                        options={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']}
+                                        onChange={(n) => {
+                                            setRootNote(n);
+                                            const idx = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(n);
+                                            const freq = 261.63 * Math.pow(2, idx / 12);
+                                            engine.rootFreq = freq;
+                                        }}
+                                        size={40}
+                                    />
+                                )}
+                            </div>
                         </div>
                     </div>
                 </GlassPanel>

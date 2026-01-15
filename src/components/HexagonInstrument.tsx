@@ -18,6 +18,7 @@ interface HexagonInstrumentProps {
   toneMod: { x: boolean, y: boolean };
   toneBase: number;
   onNoteActive: (color: string) => void;
+  center?: { x: number, y: number };
 }
 
 interface Trail {
@@ -41,7 +42,8 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   volMod,
   toneMod,
   toneBase,
-  onNoteActive
+  onNoteActive,
+  center
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeTouches, setActiveTouches] = useState<Map<number, Point>>(new Map());
@@ -50,8 +52,8 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   const activeBadgePointer = useRef<number | null>(null);
 
   // Geometry
-  const centerX = width / 2;
-  const centerY = height / 2;
+  const centerX = center ? center.x : width / 2;
+  const centerY = center ? center.y : height / 2;
   const radius = Math.min(width, height) * 0.42;
   const vertices = useMemo(() => getHexagonVertices({ x: centerX, y: centerY }, radius), [centerX, centerY, radius]);
 
