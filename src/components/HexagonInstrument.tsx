@@ -287,6 +287,13 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     });
   };
 
+  // NEW: Update active notes when modulations change (Multitasking Fix)
+  useEffect(() => {
+    activeTouches.forEach((pos, id) => {
+      updateNoteFromPosition(id, pos.x, pos.y);
+    });
+  }, [volMod, toneMod, paramModulations]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;

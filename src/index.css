@@ -216,3 +216,22 @@ body {
     linear-gradient(90deg, rgba(0, 242, 255, 0.05) 1px, transparent 1px);
   background-size: 60px 60px;
 }
+
+/* Swap Pulse Animation */
+@keyframes swap-pulse {
+
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(2);
+    filter: brightness(1.5);
+  }
+}
+
+.animate-swap-pulse {
+  animation: swap-pulse 0.4s ease-in-out;
+}

@@ -42,7 +42,13 @@ export function updateEffectStrength(effect: Tone.ToneAudioNode, strength: numbe
   // @ts-ignore
   if (effect.wet) {
     // @ts-ignore
-    effect.wet.value = strength; // 0 to 1
+    if (typeof effect.wet.rampTo === 'function') {
+      // @ts-ignore
+      effect.wet.rampTo(strength, 0.2);
+    } else {
+      // @ts-ignore
+      effect.wet.value = strength; // 0 to 1
+    }
   }
 }
 

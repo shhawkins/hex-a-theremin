@@ -209,9 +209,11 @@ export class AudioEngine {
     // @ts-ignore
     const param = effect[key];
 
-    if (param && typeof param.value === 'number') {
-      // It's a AudioParam or Signal
-      // @ts-ignore
+    if (param && typeof param.rampTo === 'function') {
+      // Smooth the transition to prevent zipper noise
+      param.rampTo(value, 0.2);
+    } else if (param && typeof param.value === 'number') {
+      // It's a AudioParam or Signal but might not expose rampTo in types, or just set value
       param.value = value;
     } else {
       // It might be a regular property (like distortion amount on some nodes)

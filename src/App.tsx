@@ -6,14 +6,14 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { AudioEngine, type VoiceType, type LoopTrack } from './audio/AudioEngine';
 import { EFFECT_TYPES, type EffectType } from './audio/effects';
 import type { Point } from './utils/geometry';
-import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Sliders, RefreshCcw } from 'lucide-react';
+import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Settings, RefreshCcw } from 'lucide-react';
 import { EffectsControlPanel } from './components/EffectsControlPanel';
 import { clsx } from 'clsx';
 
 const engine = AudioEngine.getInstance();
 
 const INITIAL_EFFECTS: EffectType[] = [
-    'JCReverb', 'FeedbackDelay', 'Distortion', 'Chorus', 'AutoFilter', 'Phaser'
+    'JCReverb', 'FeedbackDelay', 'Vibrato', 'Chorus', 'AutoFilter', 'Phaser'
 ];
 
 // Minimal Glass Panel
@@ -136,17 +136,38 @@ function App() {
         setStarted(true);
     };
 
+    // Track which effect slots are animating (for swap animation)
+    const [swappingSlots, setSwappingSlots] = useState<Set<number>>(new Set());
+
     const handleEffectChange = (index: number, type: string) => {
-        const newEffects = [...effects];
-        newEffects[index] = type as EffectType;
-        setEffects(newEffects);
-        engine.setEffect(index, newEffects[index]);
+        const newType = type as EffectType;
+        const existingIndex = effects.findIndex((e, i) => e === newType && i !== index);
+
+        if (existingIndex !== -1) {
+            // Swap: The selected effect is already on another slot
+            const newEffects = [...effects];
+            const oldEffect = effects[index];
+            newEffects[index] = newType;
+            newEffects[existingIndex] = oldEffect;
+
+            // Trigger swap animation on both slots
+            setSwappingSlots(new Set([index, existingIndex]));
+            setTimeout(() => setSwappingSlots(new Set()), 400); // Clear after animation
+
+            setEffects(newEffects);
+            engine.setEffect(index, newType);
+            engine.setEffect(existingIndex, oldEffect);
+        } else {
+            // Normal: Just set the effect
+            const newEffects = [...effects];
+            newEffects[index] = newType;
+            setEffects(newEffects);
+            engine.setEffect(index, newEffects[index]);
+        }
     };
 
-    const availableEffects = (currentIndex: number) => {
-        const selectedOthers = effects.filter((_, i) => i !== currentIndex);
-        return EFFECT_TYPES.filter(e => !selectedOthers.includes(e));
-    };
+    // Show all effects in dropdown (swap handles duplicates)
+    const availableEffects = () => EFFECT_TYPES;
 
     const menuPositions = useMemo(() => {
         const positions: { x: number, y: number, rotation: number }[] = [];
@@ -237,7 +258,10 @@ function App() {
                 {menuPositions.map((pos, i) => (
                     <div
                         key={i}
-                        className="absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center fade-in"
+                        className={clsx(
+                            "absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center fade-in transition-all duration-300",
+                            swappingSlots.has(i) && "animate-swap-pulse"
+                        )}
                         style={{
                             left: pos.x,
                             top: pos.y,
@@ -252,7 +276,7 @@ function App() {
                                 borderLeftColor: sideColors[i]
                             }}
                         >
-                            {availableEffects(i).map(eff => (
+                            {availableEffects().map(eff => (
                                 <option key={eff} value={eff}>
                                     {eff.replace('JCReverb', 'Reverb').replace('FeedbackDelay', 'Delay').replace('PingPongDelay', 'PingPong')}
                                 </option>
@@ -280,8 +304,11 @@ function App() {
                                         : "max-h-8 opacity-100 mt-1"
                                 )}>
                                     <button
-                                        className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                            paramModulations[`${i}:wet`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                        className={clsx(
+                                            "rounded border transition-colors font-mono",
+                                            isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1",
+                                            paramModulations[`${i}:wet`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30"
+                                        )}
                                         onClick={() => {
                                             const key = `${i}:wet`;
                                             setParamModulations(prev => {
@@ -292,8 +319,11 @@ function App() {
                                         title="Modulate with Volume (X Axis)"
                                     >X</button>
                                     <button
-                                        className={clsx("text-[8px] px-1.5 py-0.5 rounded border transition-colors font-mono",
-                                            paramModulations[`${i}:wet`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                        className={clsx(
+                                            "rounded border transition-colors font-mono",
+                                            isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1",
+                                            paramModulations[`${i}:wet`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30"
+                                        )}
                                         onClick={() => {
                                             const key = `${i}:wet`;
                                             setParamModulations(prev => {
@@ -304,14 +334,17 @@ function App() {
                                         title="Modulate with Pitch (Y Axis)"
                                     >Y</button>
                                     <button
-                                        className="text-[8px] px-1.5 py-0.5 rounded border border-white/10 bg-black/40 text-gray-500 hover:text-white transition-colors"
+                                        className={clsx(
+                                            "rounded border border-white/10 bg-black/40 text-gray-500 hover:text-white transition-colors",
+                                            isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1"
+                                        )}
                                         onClick={() => {
                                             setActiveEffectIndex(i);
                                             setIsEffectsPanelOpen(true);
                                         }}
                                         title="Effect Settings"
                                     >
-                                        <Sliders size={8} />
+                                        <Settings size={isMobile ? 8 : 12} />
                                     </button>
                                 </div>
                             </div>
