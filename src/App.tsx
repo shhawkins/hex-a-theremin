@@ -3,6 +3,7 @@ import { HexagonInstrument } from './components/HexagonInstrument';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { OnboardingModal } from './components/OnboardingModal';
 import { HarmonyVisualizer } from './components/HarmonyVisualizer';
+import { RoseVisualizer } from './components/RoseVisualizer';
 import { RotaryDial } from './components/RotaryDial';
 import { useRef, useEffect, useState, useMemo } from 'react';
 import type { ArpPattern, ArpRate } from './audio/Arpeggiator';
@@ -121,7 +122,7 @@ function App() {
     const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
     const [paramModulations, setParamModulations] = useState<Record<string, ModulationState>>({});
     const [isCompToolsOpen, setIsCompToolsOpen] = useState(false);
-    const [showVisualizer, setShowVisualizer] = useState(true);
+    const [visualizerMode, setVisualizerMode] = useState<'none' | 'geo' | 'rose'>('none');
 
     // Real-time Visual Modulation State (Ref to avoid re-renders, read in render loop)
     const visualModRef = useRef({ vol: 1.0, tone: 1.0 });
@@ -299,12 +300,26 @@ function App() {
                 />
             </div>
 
-            {/* Harmony Visualizer - Full Screen Bloom with Positioned Center */}
+            {/* Harmony Visualizer (Ghost) - Always Active */}
+            <div className="fixed inset-0 pointer-events-none z-0">
+                <HarmonyVisualizer
+                    engine={engine}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    centerX={visualizerCenter.x}
+                    centerY={visualizerCenter.y}
+                    activeEffectTypes={activeEffectTypes}
+                />
+            </div>
+
+
+
+            {/* Rose Visualizer (Toggleable) */}
             <div className={clsx(
                 "fixed inset-0 pointer-events-none transition-opacity duration-1000 z-0",
-                showVisualizer ? "opacity-100" : "opacity-0"
+                visualizerMode === 'rose' ? "opacity-100" : "opacity-0"
             )}>
-                <HarmonyVisualizer
+                <RoseVisualizer
                     engine={engine}
                     width={dimensions.width}
                     height={dimensions.height}
@@ -509,15 +524,18 @@ function App() {
                                             <div className="flex items-center gap-2">
                                                 {/* Visualizer Toggle */}
                                                 <button
-                                                    onClick={() => setShowVisualizer(!showVisualizer)}
+                                                    onClick={() => setVisualizerMode(prev => prev === 'rose' ? 'none' : 'rose')}
                                                     className={clsx(
-                                                        "text-gray-500 hover:text-hex-accent transition-colors p-1",
-                                                        showVisualizer && "text-hex-accent"
+                                                        "w-5 h-5 rounded flex items-center justify-center transition-all",
+                                                        visualizerMode === 'rose'
+                                                            ? "text-hex-accent bg-hex-accent/10"
+                                                            : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                                                     )}
-                                                    title="Toggle Harmony Visualizer"
+                                                    title="Toggle Visualizer"
                                                 >
                                                     <Activity size={12} />
                                                 </button>
+
                                                 {/* Reset Button moved here */}
                                                 <button
                                                     onClick={() => {
