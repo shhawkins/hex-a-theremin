@@ -113,6 +113,7 @@ export class AudioEngine {
   private static instance: AudioEngine;
 
   public context: any;
+  public activeFrequencies: Set<number> = new Set(); // Track active notes for visualizer
   private mainBus: Tone.Gain;
   private mixBus: Tone.Gain;
   private effectBus: Tone.Gain;
@@ -199,6 +200,12 @@ export class AudioEngine {
         v.triggerAttack(f, 0.7); // fixed vol for now
         v.synth.triggerRelease(Tone.now() + duration);
         setTimeout(() => v.dispose(), duration * 1000 + 500);
+
+        // Short-lived visual feedback for Arp notes? 
+        // For harmony analysis, we probably care about the HELD notes (inputs), 
+        // but maybe we want the arp notes to flash the visualizer?
+        // Let's stick to input tracking in startNote/stopNote for the base harmony color,
+        // and maybe use the waveform for the "pulse".
       });
     });
   }
@@ -312,7 +319,10 @@ export class AudioEngine {
 
     if (shouldArp) {
       // Add to arp
-      freqs.forEach(f => this.arpeggiator.addNote(f));
+      freqs.forEach(f => {
+        this.arpeggiator.addNote(f);
+        this.activeFrequencies.add(f); // Track
+      });
       // Track as Arp touch
       this.activeArpTouches.set(touchId, freqs);
       return;
@@ -321,6 +331,7 @@ export class AudioEngine {
     const voices: Voice[] = [];
 
     freqs.forEach(f => {
+      this.activeFrequencies.add(f); // Track
       const voice = new Voice(this.currentVoiceType, this.effectBus);
       voice.triggerAttack(f, volume);
       voices.push(voice);
@@ -336,9 +347,15 @@ export class AudioEngine {
     if (this.activeArpTouches.has(touchId)) {
       const oldFreqs = this.activeArpTouches.get(touchId);
       if (oldFreqs) {
-        oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
+        oldFreqs.forEach(f => {
+          this.arpeggiator.removeNote(f);
+          this.activeFrequencies.delete(f); // Untrack old
+        });
       }
-      freqs.forEach(f => this.arpeggiator.addNote(f));
+      freqs.forEach(f => {
+        this.arpeggiator.addNote(f);
+        this.activeFrequencies.add(f); // Track new
+      });
       this.activeArpTouches.set(touchId, freqs);
       return;
     }
@@ -350,7 +367,11 @@ export class AudioEngine {
       // Update existing voices
       voices.forEach((voice, i) => {
         if (i < freqs.length) {
+          const oldFreq = voice.frequency;
+          this.activeFrequencies.delete(oldFreq); // Untrack old
+
           voice.setNote(freqs[i], volume);
+          this.activeFrequencies.add(freqs[i]); // Track new
         }
       });
       // (Advanced: Handle count mismatch if chord type changes mid-drag - rare case, ignoring for now)
@@ -361,7 +382,10 @@ export class AudioEngine {
     if (this.activeArpTouches.has(touchId)) {
       const oldFreqs = this.activeArpTouches.get(touchId);
       if (oldFreqs) {
-        oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
+        oldFreqs.forEach(f => {
+          this.arpeggiator.removeNote(f);
+          this.activeFrequencies.delete(f); // Untrack
+        });
       }
       this.activeArpTouches.delete(touchId);
       return;
@@ -370,6 +394,7 @@ export class AudioEngine {
     const voices = this.voices.get(touchId);
     if (voices) {
       voices.forEach(voice => {
+        this.activeFrequencies.delete(voice.frequency); // Untrack
         voice.triggerRelease();
         setTimeout(() => {
           voice.dispose();
@@ -387,6 +412,7 @@ export class AudioEngine {
       });
     });
     this.voices.clear();
+    this.activeFrequencies.clear();
   }
 
   public reset() {

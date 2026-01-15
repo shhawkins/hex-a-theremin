@@ -2,6 +2,7 @@
 import { HexagonInstrument } from './components/HexagonInstrument';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { OnboardingModal } from './components/OnboardingModal';
+import { HarmonyVisualizer } from './components/HarmonyVisualizer';
 import { RotaryDial } from './components/RotaryDial';
 import { useRef, useEffect, useState, useMemo } from 'react';
 import type { ArpPattern, ArpRate } from './audio/Arpeggiator';
@@ -120,6 +121,7 @@ function App() {
     const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
     const [paramModulations, setParamModulations] = useState<Record<string, ModulationState>>({});
     const [isCompToolsOpen, setIsCompToolsOpen] = useState(false);
+    const [showVisualizer, setShowVisualizer] = useState(true);
 
     // Real-time Visual Modulation State (Ref to avoid re-renders, read in render loop)
     const visualModRef = useRef({ vol: 1.0, tone: 1.0 });
@@ -279,6 +281,24 @@ function App() {
                     width={dimensions.width}
                     height={192}
                     color="#fff"
+                />
+            </div>
+
+            {/* Harmony Visualizer - Background/Responsive Placement */}
+            <div className={clsx(
+                "absolute pointer-events-none transition-all duration-500 z-0",
+                showVisualizer ? "opacity-60" : "opacity-0",
+                isMobile
+                    ? "left-1/2 top-24 -translate-x-1/2 w-[220px] h-[220px]" // Mobile: Fixed top (PERFECT)
+                    : isLandscape
+                        ? "top-[400px] left-4 w-[240px] h-[240px]" // Landscape: Lower (halfway adjustment)
+                        : "top-10 right-8 w-[200px] h-[200px]" // iPad Portrait: More margin top/right
+            )}
+            >
+                <HarmonyVisualizer
+                    engine={engine}
+                    width={isMobile ? 220 : (isLandscape ? 240 : 200)}
+                    height={isMobile ? 220 : (isLandscape ? 240 : 200)}
                 />
             </div>
 
@@ -451,7 +471,11 @@ function App() {
             {/* SETTINGS PANEL: Responsive Placement */}
             <div className={clsx(
                 "absolute z-40 pointer-events-none transition-all duration-300",
-                isLandscape ? "top-4 left-4 w-64" : "top-6 left-2 right-2 flex justify-center"
+                isLandscape
+                    ? "top-4 left-4 w-64"
+                    : isMobile
+                        ? "top-6 left-2 right-2 flex justify-center" // Mobile: Centered
+                        : "top-6 left-4 w-[500px]" // iPad Portrait: Shift LEFT to make room for visualizer on right
             )}>
                 <div className={clsx("pointer-events-auto", !isLandscape && "w-full max-w-[500px]")}>
                     <GlassPanel
@@ -470,43 +494,56 @@ function App() {
                                             <label className="text-[9px] uppercase text-gray-500 tracking-wider">
                                                 Waveform
                                             </label>
-                                            {/* Reset Button moved here */}
-                                            <button
-                                                onClick={() => {
-                                                    engine.reset();
+                                            <div className="flex items-center gap-2">
+                                                {/* Visualizer Toggle */}
+                                                <button
+                                                    onClick={() => setShowVisualizer(!showVisualizer)}
+                                                    className={clsx(
+                                                        "text-gray-500 hover:text-hex-accent transition-colors p-1",
+                                                        showVisualizer && "text-hex-accent"
+                                                    )}
+                                                    title="Toggle Harmony Visualizer"
+                                                >
+                                                    <Activity size={12} />
+                                                </button>
+                                                {/* Reset Button moved here */}
+                                                <button
+                                                    onClick={() => {
+                                                        engine.reset();
 
-                                                    // Reset State
-                                                    setEffects([...INITIAL_EFFECTS]);
-                                                    setParamModulations({});
-                                                    setVolMod({ x: true, y: false, xInv: false, yInv: false, p: false });
-                                                    setToneMod({ x: false, y: false, xInv: false, yInv: false, p: false });
-                                                    setVoiceType('sine');
-                                                    setOctave(2);
-                                                    setTone(0.8);
-                                                    setMasterVolume(0.8);
-                                                    setRootNote('C');
-                                                    setBadgePos(center); // Reset badge position
+                                                        // Reset State
+                                                        setEffects([...INITIAL_EFFECTS]);
+                                                        setParamModulations({});
+                                                        setVolMod({ x: true, y: false, xInv: false, yInv: false, p: false });
+                                                        setToneMod({ x: false, y: false, xInv: false, yInv: false, p: false });
+                                                        setVoiceType('sine');
+                                                        setOctave(2);
+                                                        setTone(0.8);
+                                                        setMasterVolume(0.8);
+                                                        setRootNote('C');
+                                                        setBadgePos(center); // Reset badge position
 
-                                                    engine.rootFreq = 261.63;
-                                                    engine.octaveRange = 2;
-                                                    engine.setVoiceType('sine');
-                                                    setScaleType('chromatic');
-                                                    setChordType('off');
+                                                        engine.rootFreq = 261.63;
+                                                        engine.octaveRange = 2;
+                                                        engine.setVoiceType('sine');
+                                                        setScaleType('chromatic');
+                                                        setChordType('off');
 
-                                                    setArpEnabled(false);
-                                                    setArpRate('8n');
-                                                    setArpPattern('up');
-                                                    engine.setArpEnabled(false);
-                                                    engine.setArpRate('8n');
-                                                    engine.setArpPattern('up');
+                                                        setArpEnabled(false);
+                                                        setArpRate('8n');
+                                                        setArpPattern('up');
+                                                        engine.setArpEnabled(false);
+                                                        engine.setArpRate('8n');
+                                                        engine.setArpPattern('up');
 
-                                                    INITIAL_EFFECTS.forEach((eff, i) => engine.setEffect(i, eff));
-                                                }}
-                                                className="text-red-500 hover:text-red-300 transition-colors p-1"
-                                                title="Reset System"
-                                            >
-                                                <RefreshCcw size={12} />
-                                            </button>
+                                                        INITIAL_EFFECTS.forEach((eff, i) => engine.setEffect(i, eff));
+                                                    }}
+                                                    className="text-red-500 hover:text-red-300 transition-colors p-1"
+                                                    title="Reset System"
+                                                >
+                                                    <RefreshCcw size={12} />
+                                                </button>
+                                            </div>
                                         </div>
                                         <select
                                             value={voiceType}
