@@ -22,31 +22,38 @@ export const WaveformVisualizer: React.FC<WaveformVisualizerProps> = ({ analyzer
     const render = () => {
       const values = analyzer.getValue();
       ctx.clearRect(0, 0, width, height);
-      
+
+      // Main Line
       ctx.beginPath();
-      ctx.lineWidth = 3;
+      // Medium thickness
+      ctx.lineWidth = 2;
       ctx.strokeStyle = color;
-      
-      // Add glow
+      ctx.globalAlpha = 0.8;
+
+      // Nice bloom
       ctx.shadowBlur = 10;
       ctx.shadowColor = color;
-      
+
       const sliceWidth = width / values.length;
       let x = 0;
-      
+
       for (let i = 0; i < values.length; i++) {
-        const v = values[i] as number; 
+        const v = values[i] as number;
         const y = (v + 1) / 2 * height;
-        
+
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
-        
+
         x += sliceWidth;
       }
-      
+
       ctx.stroke();
+
+      // Reflection ?? maybe too much. Keep it just bloom.
+
+      ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
-      
+
       animId = requestAnimationFrame(render);
     };
 

@@ -9,10 +9,10 @@ interface HexagonInstrumentProps {
   height: number;
   effectBadgePos: Point;
   setEffectBadgePos: (p: Point) => void;
-  colors: string[];
+  colors: string[]; // We will ignore these passed props for the grid and use a custom palette
   ghostNotesEnabled: boolean;
-  octaveRange: number; // Passed prop
-  onNoteActive: (color: string) => void; // Callback for waveform color
+  octaveRange: number;
+  onNoteActive: (color: string) => void;
 }
 
 interface Trail {
@@ -28,7 +28,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   height,
   effectBadgePos,
   setEffectBadgePos,
-  colors,
+  colors: propColors, // Rename to avoid confusion, we'll use a better palette
   ghostNotesEnabled,
   octaveRange,
   onNoteActive
@@ -42,22 +42,33 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   // Geometry
   const centerX = width / 2;
   const centerY = height / 2;
-  const radius = Math.min(width, height) * 0.45; 
+  const radius = Math.min(width, height) * 0.42;
   const vertices = useMemo(() => getHexagonVertices({ x: centerX, y: centerY }, radius), [centerX, centerY, radius]);
 
-  // Color Helper
+  // Enhanced Color Theory Palette - "Beautiful Color Wheel"
+  // Using HSL to create a seamless rainbow gradient around the hexagon
+  const getSideColor = (index: number) => {
+    // 6 sides = 60 degrees each.
+    // 0: Cyan, 1: Blue, 2: Purple, 3: Pink, 4: Orange, 5: Yellow/Green?
+    // Let's adjust for a classic spectral look
+    const hues = [190, 260, 320, 10, 45, 120]; // Cyan, Purple, Magenta, Red, Orange, Green
+    return `hsl(${hues[index]}, 100%, 60%)`;
+  };
+
+  const sideColors = useMemo(() => [0, 1, 2, 3, 4, 5].map(i => getSideColor(i)), []);
+
   const getColorForPosition = (angleRad: number) => {
-      // Map angle to Hue (0-360)
-      const deg = (angleRad * 180 / Math.PI + 360) % 360;
-      return `hsl(${deg}, 100%, 60%)`;
+    // Smooth gradient
+    const deg = (angleRad * 180 / Math.PI + 360) % 360;
+    return `hsl(${deg}, 100%, 65%)`; // Slightly brighter/more saturated
   };
 
   const recordTouchIfActive = (x: number, y: number, id: number, color: string) => {
-      engine.tracks.forEach((track, idx) => {
-          if (track.isRecording) {
-              engine.recordTouchEvent(idx, x, y, id, color);
-          }
-      });
+    engine.tracks.forEach((track, idx) => {
+      if (track.isRecording) {
+        engine.recordTouchEvent(idx, x, y, id, color);
+      }
+    });
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -77,17 +88,17 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
       (e.target as Element).setPointerCapture(e.pointerId);
       updateNoteFromPosition(e.pointerId, x, y);
       setActiveTouches(prev => new Map(prev).set(e.pointerId, p));
-      
+
       const angle = Math.atan2(y - centerY, x - centerX);
       const color = getColorForPosition(angle);
-      
+
       recordTouchIfActive(x, y, e.pointerId, color);
       onNoteActive(color);
-      
-      trailsRef.current.set(e.pointerId, { 
-          id: e.pointerId, 
-          points: [], 
-          lastX: x, lastY: y 
+
+      trailsRef.current.set(e.pointerId, {
+        id: e.pointerId,
+        points: [],
+        lastX: x, lastY: y
       });
     }
   };
@@ -97,11 +108,11 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     const rect = canvasRef.current!.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     if (activeBadgePointer.current === e.pointerId) {
-      if (isPointInHexagon({x, y}, vertices)) {
-          setEffectBadgePos({ x, y });
-          updateEffectsFromBadge({ x, y });
+      if (isPointInHexagon({ x, y }, vertices)) {
+        setEffectBadgePos({ x, y });
+        updateEffectsFromBadge({ x, y });
       }
       return;
     }
@@ -109,24 +120,18 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     if (activeTouches.has(e.pointerId)) {
       updateNoteFromPosition(e.pointerId, x, y);
       setActiveTouches(prev => new Map(prev).set(e.pointerId, { x, y }));
-      
+
       const angle = Math.atan2(y - centerY, x - centerX);
       const color = getColorForPosition(angle);
-      
+
       recordTouchIfActive(x, y, e.pointerId, color);
       onNoteActive(color);
 
-      // Trail Logic
       const trail = trailsRef.current.get(e.pointerId);
       if (trail) {
-          const dist = Math.sqrt(Math.pow(x - trail.lastX, 2) + Math.pow(y - trail.lastY, 2));
-          // Speed -> Width (faster = thinner? or thicker? "scales proportionally" -> Faster = Thicker/Longer?)
-          // Usually fast = thinner/streaky or thicker/impactful? Let's go thicker with speed up to a limit.
-          const width = Math.min(10, 2 + dist / 2);
-          
-          trail.points.push({ x, y, age: 1.0, width, color });
-          trail.lastX = x;
-          trail.lastY = y;
+        trail.points.push({ x, y, age: 1.0, width: 2, color });
+        trail.lastX = x;
+        trail.lastY = y;
       }
     }
   };
@@ -150,15 +155,15 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   const updateNoteFromPosition = (id: number, x: number, y: number) => {
     const minX = centerX - radius;
     const maxX = centerX + radius;
-    const minY = centerY - radius * SQRT3/2; 
-    const maxY = centerY + radius * SQRT3/2;
-    
+    const minY = centerY - radius * SQRT3 / 2;
+    const maxY = centerY + radius * SQRT3 / 2;
+
     let normX = (x - minX) / (maxX - minX);
-    let normY = 1 - ((y - minY) / (maxY - minY)); 
-    
-    const minNote = engine.rootFreq * Math.pow(2, 0); 
+    let normY = 1 - ((y - minY) / (maxY - minY));
+
+    const minNote = engine.rootFreq * Math.pow(2, 0);
     const maxNote = engine.rootFreq * Math.pow(2, octaveRange);
-    
+
     const freq = minNote * Math.pow(maxNote / minNote, normX);
     const vol = Math.max(0, Math.min(1, normY));
 
@@ -167,11 +172,11 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
 
   const updateEffectsFromBadge = (pos: Point) => {
     const dists = getDistancesToSides(pos, vertices);
-    const maxDist = radius; 
-    
+    const maxDist = radius;
+
     dists.forEach((d, i) => {
-       const strength = Math.max(0, 1 - (d / maxDist));
-       engine.updateEffectParameter(i, strength);
+      const strength = Math.max(0, 1 - (d / maxDist));
+      engine.updateEffectParameter(i, strength);
     });
   };
 
@@ -184,153 +189,218 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     const render = () => {
       ctx.clearRect(0, 0, width, height);
 
-      // Draw Hexagon Background
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
+      // 0. Background Gradient within Hexagon (Subtle)
+      // This fills the hex with a very faint spectrum
+      ctx.save();
       ctx.beginPath();
       vertices.forEach((v, i) => {
         if (i === 0) ctx.moveTo(v.x, v.y);
         else ctx.lineTo(v.x, v.y);
       });
       ctx.closePath();
-      ctx.stroke();
+      ctx.clip();
+      // Draw a radial gradient? Or mesh? Let's keep it simple: faint radial
+      const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+      gradient.addColorStop(0, 'rgba(0,0,0,0)');
+      gradient.addColorStop(1, 'rgba(0, 242, 255, 0.05)'); // Faint cyan glow at edges
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      ctx.restore();
 
-      // Draw Sides with Colors
+      // 1. Hexagon Frame (Glow restored)
+      ctx.shadowBlur = 10; // Moderate glow
+      ctx.shadowColor = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      vertices.forEach((v, i) => {
+        if (i === 0) ctx.moveTo(v.x, v.y);
+        else ctx.lineTo(v.x, v.y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // 2. Active Sides (Vibrant)
+      // Draw them with a bit of "neon light" aesthetic
       vertices.forEach((v, i) => {
         const nextV = vertices[(i + 1) % 6];
         ctx.beginPath();
         ctx.moveTo(v.x, v.y);
         ctx.lineTo(nextV.x, nextV.y);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = colors[i] || '#fff';
+
+        ctx.strokeStyle = sideColors[i];
+        ctx.lineWidth = 3;
+
+        // Bloom
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = sideColors[i];
         ctx.stroke();
       });
+      ctx.shadowBlur = 0;
 
-      // Draw Grid - Subdivide based on octaveRange (horizontal)
-      // We want roughly 12 * octaveRange notches
+      // 3. Grid (Techy but clean)
+      // Add semitone lines back, but cleaner
       const totalNotes = 12 * octaveRange;
-      const notchCount = totalNotes; // Can be dense
-      
-      // Draw Root Note indicators (every 12)
-      ctx.globalAlpha = 0.2;
-      const hexWidth = radius * 2;
+      const notchCount = totalNotes;
+      const hexHalfHeight = radius * SQRT3 / 2;
+      const topY = centerY - hexHalfHeight;
+      const bottomY = centerY + hexHalfHeight;
       const leftX = centerX - radius;
-      
-      for(let i=0; i<=notchCount; i++) {
-          const x = leftX + (i/notchCount) * hexWidth;
-          // Check if this is a Root Note (C)
-          const isRoot = i % 12 === 0;
-          
-          if (x >= leftX && x <= leftX + hexWidth) {
-              ctx.beginPath();
-              // Clip to hexagon? Simplified: Draw vertical line segment constrained by height?
-              // Just draw full height within bounding box, opacity handles subtlety
-              ctx.moveTo(x, centerY - radius * SQRT3/2);
-              ctx.lineTo(x, centerY + radius * SQRT3/2);
-              
-              if (isRoot) {
-                  ctx.strokeStyle = '#fff';
-                  ctx.lineWidth = 2;
-                  ctx.globalAlpha = 0.4;
-              } else {
-                  ctx.strokeStyle = '#555';
-                  ctx.lineWidth = 1;
-                  ctx.globalAlpha = 0.1;
-              }
-              ctx.stroke();
-          }
+      const hexWidth = radius * 2;
+
+      ctx.globalAlpha = 0.8;
+      for (let i = 0; i <= notchCount; i++) {
+        const x = leftX + (i / notchCount) * hexWidth;
+        const isRoot = i % 12 === 0;
+
+        if (isRoot) {
+          // Root Note Line - Visible
+          ctx.beginPath();
+          ctx.moveTo(x, topY);
+          ctx.lineTo(x, bottomY);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else {
+          // Semitone Ticks (Top and Bottom only) - Faint
+          const tickSize = 3;
+          ctx.beginPath();
+          ctx.moveTo(x, topY);
+          ctx.lineTo(x, topY + tickSize);
+          ctx.moveTo(x, bottomY);
+          ctx.lineTo(x, bottomY - tickSize);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
       }
       ctx.globalAlpha = 1;
 
-      // Draw Ghost Notes
+      // 4. Ghost Notes (Luminous dots)
       if (ghostNotesEnabled && engine.masterLoopDuration) {
-          const transportTime = Tone.Transport.seconds % engine.masterLoopDuration;
-          
-          engine.tracks.forEach(track => {
-              if (track.isPlaying && track.ghostEvents.length > 0) {
-                  track.ghostEvents.forEach(e => {
-                      // Check if time matches current transport time window
-                      const diff = Math.abs(e.time - transportTime);
-                      const wrapDiff = Math.abs(engine.masterLoopDuration! - diff);
-                      const threshold = 0.15; // 150ms window
-                      
-                      if (diff < threshold || wrapDiff < threshold) {
-                          ctx.beginPath();
-                          ctx.arc(e.x, e.y, 10, 0, Math.PI * 2);
-                          ctx.fillStyle = e.color || track.color;
-                          ctx.shadowBlur = 10;
-                          ctx.shadowColor = e.color || track.color;
-                          ctx.fill();
-                          ctx.shadowBlur = 0;
-                      }
-                  });
+        const transportTime = Tone.Transport.seconds % engine.masterLoopDuration;
+
+        engine.tracks.forEach(track => {
+          if (track.isPlaying && track.ghostEvents.length > 0) {
+            track.ghostEvents.forEach(e => {
+              const diff = Math.abs(e.time - transportTime);
+              const wrapDiff = Math.abs(engine.masterLoopDuration! - diff);
+              const threshold = 0.15; // increased window for visibility
+
+              if (diff < threshold || wrapDiff < threshold) {
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = e.color || track.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = e.color || track.color;
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, 10 + (Math.random() * 3), 0, Math.PI * 2);
+                ctx.strokeStyle = e.color || track.color;
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
               }
-          });
+            });
+          }
+        });
       }
 
-      // Draw Trails
+      // 5. Trails (Neon Lasers)
+      ctx.lineCap = 'round';
       trailsRef.current.forEach((trail, id) => {
-        // Draw connected segments
         if (trail.points.length > 1) {
-            for (let i = 1; i < trail.points.length; i++) {
-                const p1 = trail.points[i-1];
-                const p2 = trail.points[i];
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = p2.color;
-                ctx.lineWidth = p2.width * p2.age;
-                ctx.lineCap = 'round';
-                ctx.stroke();
-            }
+
+          // Outer Glow
+          ctx.beginPath();
+          for (let i = 1; i < trail.points.length; i++) {
+            const p1 = trail.points[i - 1];
+            const p2 = trail.points[i];
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = p2.color;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = p2.color;
+            ctx.stroke();
+          }
+          ctx.shadowBlur = 0;
+
+          // Inner Core (White hot)
+          ctx.beginPath();
+          for (let i = 1; i < trail.points.length; i++) {
+            const p1 = trail.points[i - 1];
+            const p2 = trail.points[i];
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#fff';
+            ctx.stroke();
+          }
         }
 
-        trail.points.forEach(p => p.age -= 0.04);
+        trail.points.forEach(p => p.age -= 0.05); // Slower decay for nicer trails
         trail.points = trail.points.filter(p => p.age > 0);
-        
+
         if (!activeTouches.has(id) && trail.points.length === 0) {
-            trailsRef.current.delete(id);
+          trailsRef.current.delete(id);
         }
       });
 
-      // Draw Active Touches
+      // 6. Active Touches (Glowing Rings)
       activeTouches.forEach((p) => {
-          const angle = Math.atan2(p.y - centerY, p.x - centerX);
-          const color = getColorForPosition(angle);
-          
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.8;
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 25, 0, Math.PI * 2);
-          ctx.strokeStyle = '#fff';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          
-          ctx.globalAlpha = 1;
+        const angle = Math.atan2(p.y - centerY, p.x - centerX);
+        const color = getColorForPosition(angle);
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 18, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = color;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
       });
 
-      // Draw Badge
+      // 7. Badge (Defined Puck with color)
       ctx.beginPath();
-      ctx.arc(effectBadgePos.x, effectBadgePos.y, 12, 0, Math.PI * 2);
-      
-      // Badge Color based on position (Angle)
+      ctx.arc(effectBadgePos.x, effectBadgePos.y, 8, 0, Math.PI * 2);
+      // Fill with dark hue of current position
       const badgeAngle = Math.atan2(effectBadgePos.y - centerY, effectBadgePos.x - centerX);
-      ctx.fillStyle = getColorForPosition(badgeAngle);
+      const badgeColor = getColorForPosition(badgeAngle);
+      ctx.fillStyle = '#111';
       ctx.fill();
-      
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      
-      // Badge Glow
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = badgeColor;
       ctx.shadowBlur = 15;
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.fill();
+      ctx.shadowColor = badgeColor;
+      ctx.stroke();
       ctx.shadowBlur = 0;
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(effectBadgePos.x, effectBadgePos.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+
+      // Connector line (very faint laser)
+      ctx.globalAlpha = 0.2;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(effectBadgePos.x, effectBadgePos.y);
+      ctx.strokeStyle = badgeColor;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
 
       animationFrameRef.current = requestAnimationFrame(render);
     };
@@ -339,7 +409,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     return () => {
       if (animationFrameRef.current !== undefined) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [width, height, vertices, activeTouches, effectBadgePos, colors, ghostNotesEnabled, octaveRange]);
+  }, [width, height, vertices, activeTouches, effectBadgePos, propColors, ghostNotesEnabled, octaveRange, sideColors]);
 
   return (
     <canvas
