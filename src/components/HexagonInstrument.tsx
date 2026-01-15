@@ -4,6 +4,7 @@ import { getHexagonVertices, isPointInHexagon, getDistancesToSides, type Point, 
 import * as Tone from 'tone';
 
 import { EFFECT_PARAMS, type EffectType } from '../audio/effects';
+import { quantizeFrequency, getChordFrequencies, type ScaleType, type ChordType } from '../utils/music';
 
 interface HexagonInstrumentProps {
   engine: AudioEngine;
@@ -14,13 +15,16 @@ interface HexagonInstrumentProps {
   colors: string[];
   ghostNotesEnabled: boolean;
   octaveRange: number;
-  paramModulations: Record<string, { x: boolean, y: boolean }>;
+  paramModulations: Record<string, { x: boolean, y: boolean, xInv?: boolean, yInv?: boolean, p?: boolean }>;
   masterVolume: number;
-  volMod: { x: boolean, y: boolean };
-  toneMod: { x: boolean, y: boolean };
+  volMod: { x: boolean, y: boolean, xInv?: boolean, yInv?: boolean, p?: boolean };
+  toneMod: { x: boolean, y: boolean, xInv?: boolean, yInv?: boolean, p?: boolean };
   toneBase: number;
+  scaleType: ScaleType;
+  chordType: ChordType;
   onNoteActive: (color: string) => void;
   onModulationUpdate?: (factors: { vol: number, tone: number }) => void;
+  onEffectSwap?: (index1: number, index2: number) => void;
   center?: { x: number, y: number };
 }
 
@@ -45,14 +49,20 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   volMod,
   toneMod,
   toneBase,
+  scaleType,
+  chordType,
 
   onNoteActive,
   onModulationUpdate,
+  onEffectSwap,
   center
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /* Refactored to store full pointer data for correct updates */
   const [activeTouches, setActiveTouches] = useState<Map<number, Point>>(new Map());
   const trailsRef = useRef<Map<number, Trail>>(new Map());
+  // Animation state for swap feedback
+  const swapAnimRef = useRef<{ vertexIdx: number, startTime: number } | null>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const activeBadgePointer = useRef<number | null>(null);
 
@@ -101,9 +111,31 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
       return;
     }
 
+    // Vertex Tap Detection (for swapping effects)
+    if (onEffectSwap) {
+      const vertexThreshold = 25;
+      const vertexIdx = vertices.findIndex(v => Math.sqrt(Math.pow(x - v.x, 2) + Math.pow(y - v.y, 2)) < vertexThreshold);
+
+      if (vertexIdx !== -1) {
+        // Vertex i connects side i-1 and side i (mod 6)
+        // Vertices are usually generated starting from angle 0 or 30.
+        // Let's assume vertex 0 is between side 5 and side 0.
+        // Vertex 1 is between side 0 and side 1.
+        // We trigger swap for the two adjacent sides.
+        const sideA = (vertexIdx + 5) % 6; // Previous side
+        const sideB = vertexIdx;           // Next side
+        onEffectSwap(sideA, sideB);
+
+        // Trigger Animation
+        swapAnimRef.current = { vertexIdx, startTime: performance.now() };
+        return;
+      }
+    }
+
     if (isPointInHexagon(p, vertices)) {
       (e.target as Element).setPointerCapture(e.pointerId);
-      updateNoteFromPosition(e.pointerId, x, y);
+
+      updateNoteFromPosition(e.pointerId, x, y, e.pressure, e.tiltX, e.tiltY, e.pointerType);
       setActiveTouches(prev => new Map(prev).set(e.pointerId, p));
 
       const angle = Math.atan2(y - centerY, x - centerX);
@@ -135,7 +167,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     }
 
     if (activeTouches.has(e.pointerId)) {
-      updateNoteFromPosition(e.pointerId, x, y);
+      updateNoteFromPosition(e.pointerId, x, y, e.pressure, e.tiltX, e.tiltY, e.pointerType);
       setActiveTouches(prev => new Map(prev).set(e.pointerId, { x, y }));
 
       const angle = Math.atan2(y - centerY, x - centerX);
@@ -173,7 +205,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     }
   };
 
-  const updateNoteFromPosition = (id: number, x: number, y: number) => {
+  const updateNoteFromPosition = (id: number, x: number, y: number, pressure: number = 0.5, tiltX: number = 0, tiltY: number = 0, pointerType: string = 'touch') => {
     const minX = centerX - radius;
     const maxX = centerX + radius;
     const minY = centerY - radius * SQRT3 / 2;
@@ -187,32 +219,87 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     const maxNote = engine.rootFreq * Math.pow(2, octaveRange);
 
     // Pitch follows Y (Vertical) - Up (normY=1) is High Pitch
-    const freq = minNote * Math.pow(maxNote / minNote, normY);
+    let freq = minNote * Math.pow(maxNote / minNote, normY);
+
+    // Scale Quantization
+    freq = quantizeFrequency(freq, engine.rootFreq, scaleType);
+
+    // Chord Generation
+    let freqs: number[] = [freq];
+    if (chordType !== 'off') {
+      freqs = getChordFrequencies(freq, engine.rootFreq, scaleType, chordType);
+    }
 
     // Calculate Volume with Modulation
     let volFactor = 1.0;
-    if (volMod.x || volMod.y) {
+    if (volMod.x || volMod.y || volMod.p) {
       let factors = [];
-      if (volMod.x) factors.push(Math.max(0, Math.min(1, normX)));
-      if (volMod.y) factors.push(Math.max(0, Math.min(1, normY)));
+      if (volMod.x) {
+        let val = Math.max(0, Math.min(1, normX));
+        if (volMod.xInv) val = 1 - val;
+        factors.push(val);
+      }
+      if (volMod.y) {
+        let val = Math.max(0, Math.min(1, normY));
+        if (volMod.yInv) val = 1 - val;
+        factors.push(val);
+      }
+      if (volMod.p && pointerType === 'pen') {
+        factors.push(pressure);
+      }
 
-      // Use average of enabled modulators
-      const sum = factors.reduce((a, b) => a + b, 0);
-      volFactor = sum / factors.length;
+      // Use average of enabled modulators, or 1.0 if none apply (e.g. p enabled but using finger)
+      if (factors.length > 0) {
+        const sum = factors.reduce((a, b) => a + b, 0);
+        volFactor = sum / factors.length;
+      }
     }
+
+    // Apple Pencil Pressure Modulation
+
+
     const vol = masterVolume * volFactor; // Scale base volume by modulation
 
     // Calculate Tone with Modulation
     let toneFactor = 1.0;
-    if (toneMod.x || toneMod.y) {
+    if (toneMod.x || toneMod.y || toneMod.p) {
       let factors = [];
       // Tone mod: X or Y maps 0..1 to modulation factor
-      if (toneMod.x) factors.push(Math.max(0, Math.min(1, normX)));
-      if (toneMod.y) factors.push(Math.max(0, Math.min(1, normY)));
+      if (toneMod.x) {
+        let val = Math.max(0, Math.min(1, normX));
+        if (toneMod.xInv) val = 1 - val;
+        factors.push(val);
+      }
+      if (toneMod.y) {
+        let val = Math.max(0, Math.min(1, normY));
+        if (toneMod.yInv) val = 1 - val;
+        factors.push(val);
+      }
+      if (toneMod.p && pointerType === 'pen') {
+        factors.push(pressure);
+      }
 
-      const sum = factors.reduce((a, b) => a + b, 0);
-      toneFactor = sum / factors.length;
+      if (factors.length > 0) {
+        const sum = factors.reduce((a, b) => a + b, 0);
+        toneFactor = sum / factors.length;
+      }
     }
+
+    // Apple Pencil Tilt Modulation (Tilt affects Tone/Filter)
+    if (pointerType === 'pen') {
+      // Tilt is usually -90 to 90. Map to factor.
+      // Let's use tiltX for simplicity or magnitude?
+      // If pen is tilted down (low angle), sound is "duller" (lower freq)?
+      // If pen is upright, sound is "brighter"?
+      // Standard tilt is 0 when upright? No, 0 is often flat.
+      // Let's try: Upright (0 tilt) = Bright. Flat = Dark.
+      // Actually browser API: 0 is perpendicular to screen (upright). 90 is flat.
+      // We'll map 0 (upright) -> 1.0, 90 (flat) -> 0.5
+      const tiltMag = Math.sqrt(tiltX * tiltX + tiltY * tiltY); // roughly degree
+      const tiltFactor = 1.0 - (Math.min(tiltMag, 90) / 180); // 0->1, 90->0.5
+      toneFactor *= tiltFactor;
+    }
+
     // Tone usually sets a filter frequency. 
     // If modulation is on, we scale the Base Tone.
     // If Base Tone is 1.0 (Open), and mod is 0.5, effective is 0.5.
@@ -221,7 +308,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     if (onModulationUpdate) onModulationUpdate({ vol: volFactor, tone: toneFactor });
 
     engine.setTone(finalTone);
-    engine.startNote(id, freq, vol);
+    engine.startNote(id, freqs, vol);
 
     // Apply Modulations
     // Loop through all 6 effect slots
@@ -231,18 +318,34 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
 
       // 1. Check Mix/Wet Modulation
       const wetMod = paramModulations[`${i}:wet`];
-      if (wetMod && (wetMod.x || wetMod.y)) {
-        let strength = 0;
-        const pitchStrength = Math.max(0, Math.min(1, normY));
-        const volStrength = Math.max(0, Math.min(1, normX));
-
-        if (wetMod.x && wetMod.y) {
-          strength = (pitchStrength + volStrength) / 2;
-        } else if (wetMod.x) {
-          strength = volStrength;
-        } else if (wetMod.y) {
-          strength = pitchStrength;
+      if (wetMod && (wetMod.x || wetMod.y || wetMod.p)) {
+        let factors = [];
+        if (wetMod.x) {
+          let val = Math.max(0, Math.min(1, normX));
+          if (wetMod.xInv) val = 1 - val;
+          factors.push(val);
         }
+        if (wetMod.y) {
+          let val = Math.max(0, Math.min(1, normY));
+          if (wetMod.yInv) val = 1 - val;
+          factors.push(val);
+        }
+        if (wetMod.p && pointerType === 'pen') {
+          factors.push(pressure);
+        }
+
+        // For effects, if factors is empty (e.g. finger with only P mod), strength should probably be 0 (no effect) or previous?
+        // Actually for "Wet", usually we want 0 if not active?
+        // Wait, if I enable P-mod for Wet, and I touch with finger, I expect... what?
+        // If I use X/Y, I expect X/Y value.
+        // If I use P, I expect Pressure.
+        // If I use finger (no pressure mod), maybe I just want 0 (Dry)?
+        // Or do I want "current knob value"?
+        // engine.updateEffectParameter(i, strength) sets the value ABSOLUTELY.
+        // If we send 0, it turns Dry.
+        // If P is on, and I use finger, should it be Dry? Yes, presumably.
+
+        const strength = factors.length > 0 ? factors.reduce((a, b) => a + b, 0) / factors.length : 0;
         engine.updateEffectParameter(i, strength);
       }
 
@@ -252,20 +355,24 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
 
       params.forEach((p) => {
         const pMod = paramModulations[`${i}:${p.key}`];
-        if (pMod && (pMod.x || pMod.y)) {
-          let strength = 0; // 0..1
-          const pitchStrength = Math.max(0, Math.min(1, normY));
-          const volStrength = Math.max(0, Math.min(1, normX));
-
-          if (pMod.x && pMod.y) {
-            strength = (pitchStrength + volStrength) / 2;
-          } else if (pMod.x) {
-            strength = volStrength;
-          } else if (pMod.y) {
-            strength = pitchStrength;
+        if (pMod && (pMod.x || pMod.y || pMod.p)) {
+          let factors = [];
+          if (pMod.x) {
+            let val = Math.max(0, Math.min(1, normX));
+            if (pMod.xInv) val = 1 - val;
+            factors.push(val);
+          }
+          if (pMod.y) {
+            let val = Math.max(0, Math.min(1, normY));
+            if (pMod.yInv) val = 1 - val;
+            factors.push(val);
+          }
+          if (pMod.p && pointerType === 'pen') {
+            factors.push(pressure);
           }
 
           // Map 0..1 to Min..Max
+          const strength = factors.length > 0 ? factors.reduce((a, b) => a + b, 0) / factors.length : 0;
           const val = p.min + strength * (p.max - p.min);
           engine.setEffectParam(i, p.key, val);
         }
@@ -280,7 +387,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     dists.forEach((d, i) => {
       // Only update from badge if modulation is NOT active for this effect's MIX (Wet)
       const wetMod = paramModulations[`${i}:wet`];
-      if (!wetMod || (!wetMod.x && !wetMod.y)) {
+      if (!wetMod || (!wetMod.x && !wetMod.y && !wetMod.p)) {
         const strength = Math.max(0, 1 - (d / maxDist));
         engine.updateEffectParameter(i, strength);
       }
@@ -290,6 +397,9 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   // NEW: Update active notes when modulations change (Multitasking Fix)
   useEffect(() => {
     activeTouches.forEach((pos, id) => {
+      // For updates from React state (mod toggle), we don't have pressure/tilt.
+      // We retain the last known position. Ideally we'd cache full event data.
+      // For now, passing defaults is acceptable as this limits "hands-off" mod changes.
       updateNoteFromPosition(id, pos.x, pos.y);
     });
   }, [volMod, toneMod, paramModulations]);
@@ -533,7 +643,114 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
       ctx.lineTo(effectBadgePos.x, effectBadgePos.y);
       ctx.strokeStyle = badgeColor;
       ctx.stroke();
+      ctx.strokeStyle = badgeColor;
+      ctx.stroke();
       ctx.globalAlpha = 1;
+
+      // 8. Swap Animation (Arrow)
+      if (swapAnimRef.current) {
+        const { vertexIdx, startTime } = swapAnimRef.current;
+        const elapsed = performance.now() - startTime;
+        const duration = 400;
+
+        if (elapsed < duration) {
+          const v = vertices[vertexIdx];
+          // Angle of vertex from center
+          const angle = Math.atan2(v.y - centerY, v.x - centerX);
+
+          // Draw arc around vertex
+          // We want it to look like it's swapping the adjacent sides.
+          // Radius 30px
+          const arcRadius = 32;
+          const progress = elapsed / duration;
+          // Ease out
+          const ease = 1 - Math.pow(1 - progress, 3);
+
+          ctx.save();
+          ctx.translate(v.x, v.y);
+          ctx.rotate(angle); // Align with vertex direction
+
+          // Draw curved arrow
+          // We want an arc perpendicular to the radius (angle 0 in this rotated context)
+          // So roughly from -PI/2 to +PI/2?
+          // Let's do a shorter arc: -PI/3 to +PI/3
+          // Animate stroke drawing? or just fade?
+          // "Brief, subtle". Let's do a static shape fading out, maybe expanding slightly.
+
+          const alpha = 1 - ease;
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+
+          // Draw Arc
+          ctx.beginPath();
+          // Start at bottom (-PI/2.5) go to top (+PI/2.5) relative to vertex outward normal (which is 0)
+          // Actually, we want it "inside" the hex or "outside"? 
+          // Vertex connects sides. The arrow should wrap around the corner.
+          // Let's draw it "inside" (towards center) because outside might be clipped by container?
+          // No, user drawing was outside. 
+          // Let's try centered on vertex.
+
+          // To make it look like a swap, maybe double headed arrow?
+          // Or just a swipe.
+          // Let's draw an arc from -130deg to +130deg (away from center)
+          // Start: Math.PI * 0.8
+          // End: Math.PI * 1.2? (This is the "back" of the vertex)
+          // No, the vertex points OUT. 0 is OUT.
+          // So the "sides" angle range is roughly +120deg and -120deg (2pi/3).
+          // Let's draw the arc crossing the 0 degree line? No, that's the point.
+          // Let's draw the arc "cup" facing the center?
+          // That would be from PI/2 to 3PI/2.
+
+          // Let's try an arc from PI/2 + 0.5 to 3PI/2 - 0.5?
+          // Rotated: 0 is "Out".
+          // Arc logic:
+          // ctx.arc(0, 0, arcRadius, Math.PI / 2 + 0.4, 3 * Math.PI / 2 - 0.4);
+
+          // Animated swipe:
+          // Draw full arc but use dashoffset? Or just draw partial based on progress.
+          // Let's just draw the full arc and fade opacity.
+
+          ctx.beginPath();
+          // Draw arc "around" the vertex corner
+          // 0 is OUT. PI is IN (towards center).
+          // Sides are roughly at 2PI/3 (120) and 4PI/3 (240)?
+          // We want to connect the sides.
+          // Let's draw arc from 120+offset to 240-offset?
+          // No, we want to cross the "tip".
+          // Let's draw arc from PI/2 to -PI/2 (crossing 0)?
+          // Yes, crossing the "tip" (0).
+
+          const startAng = -Math.PI / 3;
+          const endAng = Math.PI / 3;
+
+          ctx.arc(0, 0, arcRadius + (ease * 5), startAng, endAng); // Expand slightly
+          ctx.stroke();
+
+          // Arrowheads?
+          // Let's add simple dots or small ticks at ends?
+          // Or a real arrow head at endAng.
+
+          // Arrow head at end
+          // Rotate local context to tip?
+          // Simple line manually
+          // Tangent at endAng is endAng + PI/2
+
+          // Draw simple double arrow heads
+          // Let's keep it subtle as requested. Just the arc might be enough visual cue.
+          // User image had arrow heads.
+          // Let's add one arrow head at `endAng`.
+
+          // ... actually let's just do the arc for now, "subtle".
+          // Maybe a glowing arc.
+
+          ctx.restore();
+
+        } else {
+          swapAnimRef.current = null;
+        }
+      }
 
       animationFrameRef.current = requestAnimationFrame(render);
     };

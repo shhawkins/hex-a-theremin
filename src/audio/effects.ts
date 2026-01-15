@@ -3,12 +3,14 @@ import * as Tone from 'tone';
 export type EffectType =
   | 'AutoFilter' | 'AutoPanner' | 'AutoWah' | 'BitCrusher' | 'Chebyshev'
   | 'Chorus' | 'Distortion' | 'FeedbackDelay' | 'JCReverb' | 'FrequencyShifter'
-  | 'Phaser' | 'PingPongDelay' | 'StereoWidener' | 'Tremolo' | 'Vibrato';
+  | 'Phaser' | 'PingPongDelay' | 'StereoWidener' | 'Tremolo' | 'Vibrato'
+  | 'PitchShift' | 'EQ3' | 'Reverb';
 
 export const EFFECT_TYPES: EffectType[] = [
   'AutoFilter', 'AutoPanner', 'AutoWah', 'BitCrusher', 'Chebyshev',
   'Chorus', 'Distortion', 'FeedbackDelay', 'JCReverb', 'FrequencyShifter',
-  'Phaser', 'PingPongDelay', 'StereoWidener', 'Tremolo', 'Vibrato'
+  'Phaser', 'PingPongDelay', 'StereoWidener', 'Tremolo', 'Vibrato',
+  'PitchShift', 'EQ3', 'Reverb'
 ];
 
 export function createEffect(type: EffectType): Tone.ToneAudioNode {
@@ -33,9 +35,25 @@ export function createEffect(type: EffectType): Tone.ToneAudioNode {
 
     case 'Tremolo': return new Tone.Tremolo({ wet: 0 }).start();
     case 'Vibrato': return new Tone.Vibrato({ wet: 0 });
+    case 'PitchShift': return new Tone.PitchShift({ wet: 0, pitch: 0 });
+    case 'EQ3': return new Tone.EQ3({ low: 0, mid: 0, high: 0 }); // wet 0 doesn't apply to EQ usually? It's insert. But Tone.EQ3 has wet? no, it's component. We might need dry/wet mix manually if we want it. But let's assume EQ is always active if selected? 
+    // Wait, the system assumes everything has wet/dry modulation. 
+    // Tone.EQ3 DOES NOT have a wet property standardly exposed like effects.
+    // However, AudioEngine wraps effects in a chain. 
+    // If an effect doesn't have wet, we might need a Dry/Wet merger. 
+    // BUT most tone effects extend Effect which has wet. EQ3 extends AudioNode, NOT Effect.
+    // So EQ3 cannot be used with `effect.wet.value = 0` in `updateEffectStrength`.
+    // We should probably check `updateEffectStrength`.
+    // Reverb DOES extend Effect.
+    case 'Reverb': {
+      const r = new Tone.Reverb({ decay: 1.5, wet: 0 });
+      r.generate();
+      return r;
+    }
     default: return new Tone.Gain(1);
   }
 }
+
 
 export function updateEffectStrength(effect: Tone.ToneAudioNode, strength: number) {
   // Most effects have a 'wet' property.
@@ -49,6 +67,9 @@ export function updateEffectStrength(effect: Tone.ToneAudioNode, strength: numbe
       // @ts-ignore
       effect.wet.value = strength; // 0 to 1
     }
+  } else if (effect.name === 'EQ3') {
+    // EQ3 doesn't have wet, so we can't modulate mix easily without a wrapper.
+    // For now, do nothing (Insert effect).
   }
 }
 
@@ -112,5 +133,18 @@ export const EFFECT_PARAMS: Record<EffectType, { name: string; key: string; min:
   'Vibrato': [
     { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
     { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
+  ],
+  'PitchShift': [
+    { name: 'Pitch', key: 'pitch', min: -12, max: 12, step: 1, suffix: 'st' },
+    { name: 'Window', key: 'windowSize', min: 0.03, max: 0.1, step: 0.01 }
+  ],
+  'EQ3': [
+    { name: 'Low', key: 'low', min: -10, max: 10, step: 1, suffix: 'dB' },
+    { name: 'Mid', key: 'mid', min: -10, max: 10, step: 1, suffix: 'dB' },
+    { name: 'High', key: 'high', min: -10, max: 10, step: 1, suffix: 'dB' }
+  ],
+  'Reverb': [
+    { name: 'Decay', key: 'decay', min: 0.1, max: 5, step: 0.1, suffix: 's' },
+    { name: 'PreDelay', key: 'preDelay', min: 0, max: 0.1, step: 0.01, suffix: 's' }
   ]
 };

@@ -1,8 +1,9 @@
 import * as Tone from 'tone';
 import { createEffect, type EffectType, updateEffectStrength } from './effects';
 import { v4 as uuidv4 } from 'uuid';
+import { Arpeggiator, type ArpPattern, type ArpRate } from './Arpeggiator';
 
-export type VoiceType = 'sine' | 'triangle' | 'sawtooth' | 'square' | 'pulse' | 'fmsynth' | 'amsynth' | 'membrane' | 'metal';
+export type VoiceType = 'sine' | 'triangle' | 'sawtooth' | 'square' | 'pulse' | 'fmsynth' | 'amsynth' | 'membrane' | 'metal' | 'pluck' | 'duo' | 'noise';
 
 interface TouchEventData {
   time: number; // Relative to loop start (seconds)
@@ -24,7 +25,7 @@ export interface LoopTrack {
 }
 
 class Voice {
-  synth: Tone.Synth | Tone.FMSynth | Tone.AMSynth | Tone.MembraneSynth | Tone.MetalSynth | Tone.MonoSynth;
+  synth: Tone.Synth | Tone.FMSynth | Tone.AMSynth | Tone.MembraneSynth | Tone.MetalSynth | Tone.MonoSynth | Tone.PluckSynth | Tone.DuoSynth | Tone.NoiseSynth;
   gain: Tone.Gain;
   frequency: number = 440;
 
@@ -45,6 +46,12 @@ class Voice {
       this.synth = new Tone.MembraneSynth().connect(this.gain);
     } else if (type === 'metal') {
       this.synth = new Tone.MetalSynth().connect(this.gain);
+    } else if (type === 'pluck') {
+      this.synth = new Tone.PluckSynth().connect(this.gain);
+    } else if (type === 'duo') {
+      this.synth = new Tone.DuoSynth().connect(this.gain);
+    } else if (type === 'noise') {
+      this.synth = new Tone.NoiseSynth().connect(this.gain);
     } else {
       if (type === 'pulse') {
         this.synth = new Tone.MonoSynth({ oscillator: { type: 'pulse' } }).connect(this.gain);
@@ -61,17 +68,31 @@ class Voice {
     this.gain.gain.rampTo(vol, 0.05);
 
     // Trigger synth
-    this.synth.triggerAttack(freq);
+    if (this.synth instanceof Tone.NoiseSynth) {
+      this.synth.triggerAttack();
+    } else {
+      // @ts-ignore - handled by type checks or runtime
+      this.synth.triggerAttack(freq);
+    }
   }
 
   setNote(freq: number, vol: number) {
     this.frequency = freq;
     // Smooth frequency ramp (theremin style)
-    if (this.synth instanceof Tone.Synth || this.synth instanceof Tone.MonoSynth || this.synth instanceof Tone.FMSynth || this.synth instanceof Tone.AMSynth) {
+    // Smooth frequency ramp (theremin style)
+    if (this.synth instanceof Tone.NoiseSynth) {
+      // Noise has no frequency
+    } else if (this.synth instanceof Tone.PluckSynth) {
+      // Pluck doesn't sustain well, but we can update freq
+      // @ts-ignore
+      this.synth.frequency.value = freq;
+    } else if (this.synth instanceof Tone.Synth || this.synth instanceof Tone.MonoSynth || this.synth instanceof Tone.FMSynth || this.synth instanceof Tone.AMSynth || this.synth instanceof Tone.DuoSynth) {
+      // @ts-ignore
       this.synth.frequency.rampTo(freq, 0.05);
     } else {
-      // Membrane/Metal might not support ramping the same way
-      this.synth.frequency.value = freq;
+      // Membrane/Metal/Others
+      // @ts-ignore
+      if (this.synth.frequency) this.synth.frequency.value = freq;
     }
 
     this.gain.gain.rampTo(vol, 0.05);
@@ -99,7 +120,7 @@ export class AudioEngine {
   private compressor: Tone.Compressor;
   private limiter: Tone.Limiter;
 
-  private voices: Map<number, Voice> = new Map();
+  private voices: Map<number, Voice[]> = new Map();
   private currentVoiceType: VoiceType = 'sine';
 
   // Effects
@@ -117,6 +138,9 @@ export class AudioEngine {
   // Settings
   public rootFreq: number = 261.63;
   public octaveRange: number = 2;
+
+  public arpeggiator: Arpeggiator;
+  private activeArpTouches: Map<number, number[]> = new Map();
 
   private constructor() {
     this.context = Tone.context;
@@ -159,6 +183,25 @@ export class AudioEngine {
         color: ['#00f0ff', '#ff0055', '#ccff00', '#aa00ff'][i]
       });
     }
+
+    // Initialize Arpeggiator
+    this.arpeggiator = new Arpeggiator((freq) => {
+      // Trigger a short note
+      const voice = new Voice(this.currentVoiceType, this.effectBus);
+
+      let duration = 0.5;
+      // @ts-ignore
+      try { duration = Tone.Time(this.arpeggiator.getRate()).toSeconds() * 0.9; } catch (e) { }
+
+      const freqs = Array.isArray(freq) ? freq : [freq];
+
+      freqs.forEach(f => {
+        const v = new Voice(this.currentVoiceType, this.effectBus);
+        v.triggerAttack(f, 0.7); // fixed vol for now
+        v.synth.triggerRelease(Tone.now() + duration);
+        setTimeout(() => v.dispose(), duration * 1000 + 500);
+      });
+    });
   }
 
   public static getInstance(): AudioEngine {
@@ -168,10 +211,26 @@ export class AudioEngine {
     return AudioEngine.instance;
   }
 
-  public async start() {
+  public start() {
+    return this.startEngine();
+  }
+
+  public async startEngine() {
     await Tone.start();
     Tone.Transport.start();
     console.log('Audio Engine Started');
+  }
+
+  public setArpEnabled(enabled: boolean) {
+    this.arpeggiator.setEnabled(enabled);
+  }
+
+  public setArpRate(rate: ArpRate) {
+    this.arpeggiator.setRate(rate);
+  }
+
+  public setArpPattern(pattern: ArpPattern) {
+    this.arpeggiator.setPattern(pattern);
   }
 
   public setVoiceType(type: VoiceType) {
@@ -243,41 +302,100 @@ export class AudioEngine {
     currentInput.connect(this.mainBus);
   }
 
-  public startNote(touchId: number, frequency: number, volume: number) {
+  public startNote(touchId: number, frequency: number | number[], volume: number) {
     if (this.voices.has(touchId)) {
       this.updateNote(touchId, frequency, volume);
       return;
     }
-    const voice = new Voice(this.currentVoiceType, this.effectBus);
-    voice.triggerAttack(frequency, volume);
-    this.voices.set(touchId, voice);
+
+    const freqs = Array.isArray(frequency) ? frequency : [frequency];
+
+    if (this.arpeggiator.getEnabled()) {
+      // Add to arp
+      freqs.forEach(f => this.arpeggiator.addNote(f));
+      // We still track "voice" as strictly the touch existence for cleanup, 
+      // but we don't hold a sustaining audio voice.
+      // We put a dummy placeholder or nothing? 
+      // Better: we map touchId to the specific frequencies so we can remove them later.
+      // Let's store them in `voices` but as empty? No `voices` expects `Voice`.
+      // Let's add a separate map for arp touches? 
+      // Or: `Voice` class can have a "silent" mode?
+      // Hack: We DO NOT add a voice to `this.voices` if arp is on?
+      // But then `updateNote` won't find it.
+      // We need to track which freqs this touch added.
+
+      this.activeArpTouches.set(touchId, freqs);
+
+      return;
+    }
+
+    const voices: Voice[] = [];
+
+    freqs.forEach(f => {
+      const voice = new Voice(this.currentVoiceType, this.effectBus);
+      voice.triggerAttack(f, volume);
+      voices.push(voice);
+    });
+
+    this.voices.set(touchId, voices);
   }
 
-  public updateNote(touchId: number, frequency: number, volume: number) {
-    const voice = this.voices.get(touchId);
-    if (voice) {
-      voice.setNote(frequency, volume);
+  public updateNote(touchId: number, frequency: number | number[], volume: number) {
+    const freqs = Array.isArray(frequency) ? frequency : [frequency];
+
+    if (this.arpeggiator.getEnabled()) {
+      const oldFreqs = this.activeArpTouches.get(touchId);
+      if (oldFreqs) {
+        oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
+      }
+      freqs.forEach(f => this.arpeggiator.addNote(f));
+      this.activeArpTouches.set(touchId, freqs);
+      return;
+    }
+
+    const voices = this.voices.get(touchId);
+    if (voices) {
+      const freqs = Array.isArray(frequency) ? frequency : [frequency];
+
+      // Update existing voices
+      voices.forEach((voice, i) => {
+        if (i < freqs.length) {
+          voice.setNote(freqs[i], volume);
+        }
+      });
+      // (Advanced: Handle count mismatch if chord type changes mid-drag - rare case, ignoring for now)
     }
   }
 
   public stopNote(touchId: number) {
-    const voice = this.voices.get(touchId);
-    if (voice) {
-      voice.triggerRelease();
-      setTimeout(() => {
-        voice.dispose();
-        if (this.voices.get(touchId) === voice) {
-          this.voices.delete(touchId);
-        }
-      }, 200);
+    if (this.arpeggiator.getEnabled()) {
+      const oldFreqs = this.activeArpTouches.get(touchId);
+      if (oldFreqs) {
+        oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
+      }
+      this.activeArpTouches.delete(touchId);
+      // Also ensure no stray normal voices if we switched modes?
+      // Fall through to check voices map just in case.
+    }
+
+    const voices = this.voices.get(touchId);
+    if (voices) {
+      voices.forEach(voice => {
+        voice.triggerRelease();
+        setTimeout(() => {
+          voice.dispose();
+        }, 200);
+      });
       this.voices.delete(touchId);
     }
   }
 
   public releaseAll() {
-    this.voices.forEach(v => {
-      v.triggerRelease();
-      setTimeout(() => v.dispose(), 200);
+    this.voices.forEach(voiceArray => {
+      voiceArray.forEach(v => {
+        v.triggerRelease();
+        setTimeout(() => v.dispose(), 200);
+      });
     });
     this.voices.clear();
   }

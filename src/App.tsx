@@ -1,11 +1,23 @@
+
 import { HexagonInstrument } from './components/HexagonInstrument';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { OnboardingModal } from './components/OnboardingModal';
 import { RotaryDial } from './components/RotaryDial';
 import { useRef, useEffect, useState, useMemo } from 'react';
+import type { ArpPattern, ArpRate } from './audio/Arpeggiator';
 import { AudioEngine, type VoiceType, type LoopTrack } from './audio/AudioEngine';
 import { EFFECT_TYPES, type EffectType } from './audio/effects';
+import { SCALES, type ScaleType, type ChordType } from './utils/music';
 import type { Point } from './utils/geometry';
+import { isIPad } from './utils/device';
+
+interface ModulationState {
+    x: boolean;
+    y: boolean;
+    xInv: boolean;
+    yInv: boolean;
+    p: boolean; // Pressure
+}
 import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Settings, RefreshCcw } from 'lucide-react';
 import { EffectsControlPanel } from './components/EffectsControlPanel';
 import { clsx } from 'clsx';
@@ -58,18 +70,39 @@ const GlassPanel = ({
     </div>
 );
 
+const getCenter = (w: number, h: number) => {
+    const isMobile = w < 600;
+    const isLandscape = w > h && w >= 600;
+    const isPortraitTablet = !isMobile && !isLandscape;
+
+    return {
+        x: isLandscape ? w / 2 + 100 : w / 2,
+        y: isMobile
+            ? h / 2 + 150
+            : isPortraitTablet
+                ? h / 2 + 180
+                : h / 2
+    };
+};
+
 function App() {
     const [started, setStarted] = useState(false);
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [effects, setEffects] = useState<(EffectType | null)[]>(INITIAL_EFFECTS);
-    const [badgePos, setBadgePos] = useState<Point>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    // Initialize badge at correct center
+    const [badgePos, setBadgePos] = useState<Point>(() => getCenter(window.innerWidth, window.innerHeight));
     const [voiceType, setVoiceType] = useState<VoiceType>('sine');
     const [octave, setOctave] = useState(2);
     const [tone, setTone] = useState(0.8);
     const [masterVolume, setMasterVolume] = useState(0.8);
-    const [volMod, setVolMod] = useState({ x: true, y: false });
-    const [toneMod, setToneMod] = useState({ x: false, y: false });
+    const [volMod, setVolMod] = useState<ModulationState>({ x: false, y: false, xInv: false, yInv: false, p: false });
+    const [toneMod, setToneMod] = useState<ModulationState>({ x: true, y: true, xInv: false, yInv: false, p: false });
     const [rootNote, setRootNote] = useState('C');
+    const [scaleType, setScaleType] = useState<ScaleType>('chromatic');
+    const [chordType, setChordType] = useState<ChordType>('off');
+    const [arpEnabled, setArpEnabled] = useState(false);
+    const [arpRate, setArpRate] = useState<ArpRate>('8n');
+    const [arpPattern, setArpPattern] = useState<ArpPattern>('up');
     const [tracks, setTracks] = useState<LoopTrack[]>(engine.tracks);
     const [, setForceUpdate] = useState(0);
     const [ghostNotesEnabled, setGhostNotesEnabled] = useState(true);
@@ -78,10 +111,11 @@ function App() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(true);
     const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
     const [isLooperOpen, setIsLooperOpen] = useState(true);
-    const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState(false);
+    const [isEffectsPanelOpen, setIsEffectsPanel] = useState(false);
     const [activeEffectIndex, setActiveEffectIndex] = useState<number | null>(null);
     const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
-    const [paramModulations, setParamModulations] = useState<Record<string, { x: boolean, y: boolean }>>({});
+    const [paramModulations, setParamModulations] = useState<Record<string, ModulationState>>({});
+    const [isCompToolsOpen, setIsCompToolsOpen] = useState(false);
 
     // Real-time Visual Modulation State (Ref to avoid re-renders, read in render loop)
     const visualModRef = useRef({ vol: 1.0, tone: 1.0 });
@@ -102,30 +136,23 @@ function App() {
 
     const isMobile = dimensions.width < 600;
     const isLandscape = dimensions.width > dimensions.height && dimensions.width >= 600;
-    const isPortraitTablet = !isMobile && !isLandscape;
+    // const isPortraitTablet = !isMobile && !isLandscape; // Redundant or re-calculated in getCenter, but used for hexScale
 
     // Hexagon sizing: maximize while leaving room for UI
     const hexScale = isMobile ? 0.28 : isLandscape ? 0.33 : 0.32;
     const hexRadius = Math.min(dimensions.width, dimensions.height) * hexScale;
 
     // Position hexagon based on layout
-    const center = {
-        x: isLandscape
-            ? dimensions.width / 2 + 100 // Shift right for sidebar in landscape
-            : dimensions.width / 2,
-        y: isMobile
-            ? dimensions.height / 2 + 120
-            : isPortraitTablet
-                ? dimensions.height / 2 + 105 // Shift down for top panel in portrait tablet
-                : dimensions.height / 2
-    };
+    const center = getCenter(dimensions.width, dimensions.height);
 
     const sideColors = ['#00f0ff', '#ff0055', '#ccff00', '#aa00ff', '#ffffff', '#ffaa00'];
 
     useEffect(() => {
         const handleResize = () => {
-            setDimensions({ width: window.innerWidth, height: window.innerHeight });
-            setBadgePos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            setDimensions({ width: w, height: h });
+            setBadgePos(getCenter(w, h));
         };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
@@ -145,18 +172,7 @@ function App() {
 
         if (existingIndex !== -1) {
             // Swap: The selected effect is already on another slot
-            const newEffects = [...effects];
-            const oldEffect = effects[index];
-            newEffects[index] = newType;
-            newEffects[existingIndex] = oldEffect;
-
-            // Trigger swap animation on both slots
-            setSwappingSlots(new Set([index, existingIndex]));
-            setTimeout(() => setSwappingSlots(new Set()), 400); // Clear after animation
-
-            setEffects(newEffects);
-            engine.setEffect(index, newType);
-            engine.setEffect(existingIndex, oldEffect);
+            handleEffectSwap(index, existingIndex);
         } else {
             // Normal: Just set the effect
             const newEffects = [...effects];
@@ -164,6 +180,24 @@ function App() {
             setEffects(newEffects);
             engine.setEffect(index, newEffects[index]);
         }
+    };
+
+    const handleEffectSwap = (indexA: number, indexB: number) => {
+        const newEffects = [...effects];
+        const effectA = newEffects[indexA];
+        const effectB = newEffects[indexB];
+
+        newEffects[indexA] = effectB;
+        newEffects[indexB] = effectA;
+
+        // Trigger swap animation
+        setSwappingSlots(new Set([indexA, indexB]));
+        setTimeout(() => setSwappingSlots(new Set()), 400);
+
+        setEffects(newEffects);
+        // Update audio engine
+        engine.setEffect(indexA, effectB);
+        engine.setEffect(indexB, effectA);
     };
 
     // Show all effects in dropdown (swap handles duplicates)
@@ -185,7 +219,41 @@ function App() {
         return positions;
     }, [center, hexRadius, isMobile]);
 
-    // Modulated Params removed from here as we use Ref now
+    const handleModToggle = (target: 'vol' | 'tone' | string, axis: 'x' | 'y' | 'p', contextMenu = false) => {
+        if (contextMenu) {
+            // Context menu logic (inversion) - only for X/Y
+            if (axis === 'p') return; // No inversion for pressure yet
+
+            if (target === 'vol') {
+                setVolMod(prev => ({ ...prev, [axis + 'Inv']: !prev[axis + 'Inv' as keyof ModulationState] }));
+            } else if (target === 'tone') {
+                setToneMod(prev => ({ ...prev, [axis + 'Inv']: !prev[axis + 'Inv' as keyof ModulationState] }));
+            } else {
+                setParamModulations(prev => {
+                    const current = prev[target] || { x: false, y: false, xInv: false, yInv: false, p: false };
+                    return {
+                        ...prev,
+                        [target]: { ...current, [axis + 'Inv']: !current[axis + 'Inv' as keyof ModulationState] }
+                    };
+                });
+            }
+        } else {
+            // Normal toggle
+            if (target === 'vol') {
+                setVolMod(prev => ({ ...prev, [axis]: !prev[axis] }));
+            } else if (target === 'tone') {
+                setToneMod(prev => ({ ...prev, [axis]: !prev[axis] }));
+            } else {
+                setParamModulations(prev => {
+                    const current = prev[target] || { x: false, y: false, xInv: false, yInv: false, p: false };
+                    return {
+                        ...prev,
+                        [target]: { ...current, [axis]: !current[axis] }
+                    };
+                });
+            }
+        }
+    };
 
     if (!started) {
         return <OnboardingModal onStart={handleStart} />;
@@ -226,8 +294,10 @@ function App() {
                     volMod={volMod}
                     toneMod={toneMod}
                     toneBase={tone}
-                    toneBase={tone}
+                    scaleType={scaleType}
+                    chordType={chordType}
                     onNoteActive={() => { }}
+                    onEffectSwap={handleEffectSwap}
                     onModulationUpdate={(factors) => {
                         visualModRef.current = factors;
                     }}
@@ -238,16 +308,18 @@ function App() {
             <EffectsControlPanel
                 engine={engine}
                 isOpen={isEffectsPanelOpen}
-                onClose={() => setIsEffectsPanelOpen(false)}
+                onClose={() => setIsEffectsPanel(false)}
                 activeEffectIndex={activeEffectIndex}
                 onEffectChange={handleEffectChange}
                 paramModulations={paramModulations}
                 onModulationChange={(key, axis) => {
                     setParamModulations(prev => {
-                        const current = prev[key] || { x: false, y: false };
+                        const current = prev[key] || { x: false, y: false, xInv: false, yInv: false, p: false };
                         return {
                             ...prev,
-                            [key]: { ...current, [axis]: !current[axis] }
+                            [key]: axis === 'xInv' || axis === 'yInv'
+                                ? { ...current, [axis]: !current[axis as any] } // Toggle inversion
+                                : { ...current, [axis]: !current[axis as any] } // Toggle active
                         };
                     });
                 }}
@@ -309,30 +381,43 @@ function App() {
                                             isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1",
                                             paramModulations[`${i}:wet`]?.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30"
                                         )}
-                                        onClick={() => {
-                                            const key = `${i}:wet`;
-                                            setParamModulations(prev => {
-                                                const current = prev[key] || { x: false, y: false };
-                                                return { ...prev, [key]: { ...current, x: !current.x } };
-                                            });
+                                        onClick={() => handleModToggle(`${i}:wet`, 'x')}
+                                        title="Modulate with Volume (X Axis) - Double tap to invert"
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            handleModToggle(`${i}:wet`, 'x', true);
                                         }}
-                                        title="Modulate with Volume (X Axis)"
-                                    >X</button>
+                                    >
+                                        {paramModulations[`${i}:wet`]?.xInv ? "X↓" : "X"}
+                                    </button>
                                     <button
                                         className={clsx(
                                             "rounded border transition-colors font-mono",
                                             isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1",
                                             paramModulations[`${i}:wet`]?.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30"
                                         )}
-                                        onClick={() => {
-                                            const key = `${i}:wet`;
-                                            setParamModulations(prev => {
-                                                const current = prev[key] || { x: false, y: false };
-                                                return { ...prev, [key]: { ...current, y: !current.y } };
-                                            });
+                                        onClick={() => handleModToggle(`${i}:wet`, 'y')}
+                                        title="Modulate with Pitch (Y Axis) - Double tap to invert"
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            handleModToggle(`${i}:wet`, 'y', true);
                                         }}
-                                        title="Modulate with Pitch (Y Axis)"
-                                    >Y</button>
+                                    >
+                                        {paramModulations[`${i}:wet`]?.yInv ? "Y↓" : "Y"}
+                                    </button>
+                                    {isIPad() && (
+                                        <button
+                                            onClick={() => handleModToggle(`${i}:wet`, 'p')}
+                                            className={clsx(
+                                                "rounded border transition-colors font-mono",
+                                                isMobile ? "text-[8px] px-1.5 py-0.5" : "text-[12px] px-2 py-1",
+                                                paramModulations[`${i}:wet`]?.p ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30"
+                                            )}
+                                            title="Modulate with Pencil Pressure"
+                                        >
+                                            ✎
+                                        </button>
+                                    )}
                                     <button
                                         className={clsx(
                                             "rounded border border-white/10 bg-black/40 text-gray-500 hover:text-white transition-colors",
@@ -340,7 +425,7 @@ function App() {
                                         )}
                                         onClick={() => {
                                             setActiveEffectIndex(i);
-                                            setIsEffectsPanelOpen(true);
+                                            setIsEffectsPanel(true);
                                         }}
                                         title="Effect Settings"
                                     >
@@ -383,8 +468,8 @@ function App() {
                                                     // Reset State
                                                     setEffects([...INITIAL_EFFECTS]);
                                                     setParamModulations({});
-                                                    setVolMod({ x: true, y: false });
-                                                    setToneMod({ x: false, y: false });
+                                                    setVolMod({ x: true, y: false, xInv: false, yInv: false, p: false });
+                                                    setToneMod({ x: false, y: false, xInv: false, yInv: false, p: false });
                                                     setVoiceType('sine');
                                                     setOctave(2);
                                                     setTone(0.8);
@@ -395,6 +480,15 @@ function App() {
                                                     engine.rootFreq = 261.63;
                                                     engine.octaveRange = 2;
                                                     engine.setVoiceType('sine');
+                                                    setScaleType('chromatic');
+                                                    setChordType('off');
+
+                                                    setArpEnabled(false);
+                                                    setArpRate('8n');
+                                                    setArpPattern('up');
+                                                    engine.setArpEnabled(false);
+                                                    engine.setArpRate('8n');
+                                                    engine.setArpPattern('up');
 
                                                     INITIAL_EFFECTS.forEach((eff, i) => engine.setEffect(i, eff));
                                                 }}
@@ -418,6 +512,9 @@ function App() {
                                             <option value="amsynth">AM Synth</option>
                                             <option value="membrane">Membrane</option>
                                             <option value="metal">Metal</option>
+                                            <option value="pluck">Pluck Synth</option>
+                                            <option value="duo">Duo Synth</option>
+                                            <option value="noise">Noise Synth</option>
                                         </select>
                                     </div>
 
@@ -460,15 +557,27 @@ function App() {
                                             <button
                                                 className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
                                                     volMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                                onClick={() => setVolMod(p => ({ ...p, x: !p.x }))}
-                                                title="Modulate with X"
-                                            >X</button>
+                                                onClick={() => handleModToggle('vol', 'x')}
+                                                onContextMenu={(e) => { e.preventDefault(); handleModToggle('vol', 'x', true); }}
+                                                title="Modulate with X (Right click to invert)"
+                                            >{volMod.xInv ? "X↓" : "X"}</button>
                                             <button
                                                 className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
                                                     volMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                                onClick={() => setVolMod(p => ({ ...p, y: !p.y }))}
-                                                title="Modulate with Y"
-                                            >Y</button>
+                                                onClick={() => handleModToggle('vol', 'y')}
+                                                onContextMenu={(e) => { e.preventDefault(); handleModToggle('vol', 'y', true); }}
+                                                title="Modulate with Y (Right click to invert)"
+                                            >{volMod.yInv ? "Y↓" : "Y"}</button>
+                                            {isIPad() && (
+                                                <button
+                                                    onClick={() => handleModToggle('vol', 'p')}
+                                                    className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                        volMod.p ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                    title="Modulate with Pencil Pressure"
+                                                >
+                                                    ✎
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
@@ -493,18 +602,31 @@ function App() {
                                             <button
                                                 className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
                                                     toneMod.x ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                                onClick={() => setToneMod(p => ({ ...p, x: !p.x }))}
-                                                title="Modulate with X"
-                                            >X</button>
+                                                onClick={() => handleModToggle('tone', 'x')}
+                                                onContextMenu={(e) => { e.preventDefault(); handleModToggle('tone', 'x', true); }}
+                                                title="Modulate with X (Right click to invert)"
+                                            >{toneMod.xInv ? "X↓" : "X"}</button>
                                             <button
                                                 className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
                                                     toneMod.y ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
-                                                onClick={() => setToneMod(p => ({ ...p, y: !p.y }))}
-                                                title="Modulate with Y"
-                                            >Y</button>
+                                                onClick={() => handleModToggle('tone', 'y')}
+                                                onContextMenu={(e) => { e.preventDefault(); handleModToggle('tone', 'y', true); }}
+                                                title="Modulate with Y (Right click to invert)"
+                                            >{toneMod.yInv ? "Y↓" : "Y"}</button>
+                                            {isIPad() && (
+                                                <button
+                                                    onClick={() => handleModToggle('tone', 'p')}
+                                                    className={clsx("text-[8px] w-4 h-4 rounded border transition-colors font-mono flex items-center justify-center",
+                                                        toneMod.p ? "bg-hex-accent text-black border-hex-accent" : "bg-black/40 text-gray-500 border-white/10 hover:border-white/30")}
+                                                    title="Modulate with Pencil Pressure"
+                                                >
+                                                    ✎
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
+                                    {/* Root: Horizontal Dial (Slider) - Standardized */}
                                     {/* Root: Horizontal Dial (Slider) - Standardized */}
                                     <div className="flex-1 flex flex-col justify-end pl-3 ml-1 border-l border-white/5 h-full min-w-[100px]">
                                         <div className="flex justify-between text-[8px] uppercase text-gray-500 mb-1.5">
@@ -535,6 +657,110 @@ function App() {
                                             {Array(12).fill(0).map((_, i) => (
                                                 <div key={i} className={clsx("w-px bg-white", i % 2 === 0 ? "h-1.5" : "h-0.5")}></div>
                                             ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Advanced / Composition Tools Toggle */}
+                                <div className="mt-2 border-t border-white/5 pt-1">
+                                    <button
+                                        onClick={() => setIsCompToolsOpen(!isCompToolsOpen)}
+                                        className="w-full flex items-center justify-between text-[9px] uppercase text-gray-500 hover:text-gray-300 transition-colors py-1"
+                                    >
+                                        <span className="tracking-wider">Composition Tools</span>
+                                        <ChevronDown size={10} className={clsx("transition-transform duration-200", isCompToolsOpen && "rotate-180")} />
+                                    </button>
+
+                                    <div className={clsx("overflow-hidden transition-all duration-300 ease-in-out", isCompToolsOpen ? "max-h-60 opacity-100" : "max-h-0 opacity-0")}>
+                                        <div className="pt-5 pb-1 space-y-3">
+                                            {/* Scale & Chord Row */}
+                                            <div className="flex gap-4">
+                                                <div className="flex-1 space-y-1">
+                                                    <label className="text-[8px] uppercase text-gray-500 block">Scale</label>
+                                                    <select
+                                                        value={scaleType}
+                                                        onChange={(e) => setScaleType(e.target.value as ScaleType)}
+                                                        className="select-minimal w-full px-2 py-1 text-[9px] rounded-sm"
+                                                    >
+                                                        {Object.entries(SCALES).map(([key, data]) => (
+                                                            <option key={key} value={key}>{data.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="flex-1 space-y-1">
+                                                    <label className="text-[8px] uppercase text-gray-500 block">Chord</label>
+                                                    <select
+                                                        value={chordType}
+                                                        onChange={(e) => setChordType(e.target.value as ChordType)}
+                                                        className="select-minimal w-full px-2 py-1 text-[9px] rounded-sm"
+                                                    >
+                                                        <option value="off">Off</option>
+                                                        <option value="triad">Triad</option>
+                                                        <option value="seventh">7th</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Arpeggiator Section */}
+                                            <div className="border-t border-white/5 pt-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-[8px] uppercase text-gray-500 tracking-wider">Arpeggiator</label>
+                                                    <button
+                                                        onClick={() => {
+                                                            const newVal = !arpEnabled;
+                                                            setArpEnabled(newVal);
+                                                            engine.setArpEnabled(newVal);
+                                                        }}
+                                                        className={clsx(
+                                                            "w-8 h-4 rounded-full relative transition-colors duration-200",
+                                                            arpEnabled ? "bg-hex-accent" : "bg-white/10"
+                                                        )}
+                                                    >
+                                                        <div className={clsx(
+                                                            "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-200 shadow-sm",
+                                                            arpEnabled ? "left-4.5" : "left-0.5"
+                                                        )} />
+                                                    </button>
+                                                </div>
+
+                                                <div className={clsx("grid grid-cols-2 gap-3 transition-opacity duration-200", arpEnabled ? "opacity-100" : "opacity-30 pointer-events-none")}>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] uppercase text-gray-500 block">Rate</label>
+                                                        <select
+                                                            value={arpRate}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value as ArpRate;
+                                                                setArpRate(val);
+                                                                engine.setArpRate(val);
+                                                            }}
+                                                            className="select-minimal w-full px-2 py-1 text-[9px] rounded-sm"
+                                                        >
+                                                            <option value="4n">1/4</option>
+                                                            <option value="8n">1/8</option>
+                                                            <option value="16n">1/16</option>
+                                                            <option value="32n">1/32</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] uppercase text-gray-500 block">Pattern</label>
+                                                        <select
+                                                            value={arpPattern}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value as ArpPattern;
+                                                                setArpPattern(val);
+                                                                engine.setArpPattern(val);
+                                                            }}
+                                                            className="select-minimal w-full px-2 py-1 text-[9px] rounded-sm"
+                                                        >
+                                                            <option value="up">Up</option>
+                                                            <option value="down">Down</option>
+                                                            <option value="upDown">Up/Down</option>
+                                                            <option value="random">Random</option>
+                                                            <option value="chord">Chord</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
