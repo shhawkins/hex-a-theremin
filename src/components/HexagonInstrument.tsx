@@ -5,6 +5,7 @@ import * as Tone from 'tone';
 
 import { EFFECT_PARAMS, type EffectType } from '../audio/effects';
 import { quantizeFrequency, getChordFrequencies, type ScaleType, type ChordType } from '../utils/music';
+import type { RegionType } from './RegionSelector';
 
 interface HexagonInstrumentProps {
   engine: AudioEngine;
@@ -22,6 +23,10 @@ interface HexagonInstrumentProps {
   toneBase: number;
   scaleType: ScaleType;
   chordType: ChordType;
+  scaleRegion: RegionType;
+  chordRegion: RegionType;
+  arpRegion: RegionType;
+  arpEnabled: boolean;
   onNoteActive: (color: string) => void;
   onModulationUpdate?: (factors: { vol: number, tone: number }) => void;
   onEffectSwap?: (index1: number, index2: number) => void;
@@ -51,6 +56,10 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   toneBase,
   scaleType,
   chordType,
+  scaleRegion = 'whole',
+  chordRegion = 'whole',
+  arpRegion = 'whole',
+  arpEnabled = false,
 
   onNoteActive,
   onModulationUpdate,
@@ -221,14 +230,34 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     // Pitch follows Y (Vertical) - Up (normY=1) is High Pitch
     let freq = minNote * Math.pow(maxNote / minNote, normY);
 
+    // Region Logic
+    // Top Half: normY > 0.5 (since normY 1 is Top)
+    // Bottom Half: normY <= 0.5
+    const isTop = normY > 0.5;
+
+    // Scale Logic
+    let effectiveScale = scaleType;
+    if (scaleRegion === 'top' && !isTop) effectiveScale = 'chromatic';
+    if (scaleRegion === 'bottom' && isTop) effectiveScale = 'chromatic';
+
     // Scale Quantization
-    freq = quantizeFrequency(freq, engine.rootFreq, scaleType);
+    freq = quantizeFrequency(freq, engine.rootFreq, effectiveScale);
+
+    // Chord Logic
+    let effectiveChord = chordType;
+    if (chordRegion === 'top' && !isTop) effectiveChord = 'off';
+    if (chordRegion === 'bottom' && isTop) effectiveChord = 'off';
 
     // Chord Generation
     let freqs: number[] = [freq];
-    if (chordType !== 'off') {
-      freqs = getChordFrequencies(freq, engine.rootFreq, scaleType, chordType);
+    if (effectiveChord !== 'off') {
+      freqs = getChordFrequencies(freq, engine.rootFreq, effectiveScale, effectiveChord);
     }
+
+    // Arp Logic
+    let useArp = arpEnabled;
+    if (arpRegion === 'top' && !isTop) useArp = false;
+    if (arpRegion === 'bottom' && isTop) useArp = false;
 
     // Calculate Volume with Modulation
     let volFactor = 1.0;
@@ -308,7 +337,7 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     if (onModulationUpdate) onModulationUpdate({ vol: volFactor, tone: toneFactor });
 
     engine.setTone(finalTone);
-    engine.startNote(id, freqs, vol);
+    engine.startNote(id, freqs, vol, useArp);
 
     // Apply Modulations
     // Loop through all 6 effect slots

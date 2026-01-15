@@ -20,6 +20,7 @@ interface ModulationState {
 }
 import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Settings, RefreshCcw } from 'lucide-react';
 import { EffectsControlPanel } from './components/EffectsControlPanel';
+import { RegionSelector, type RegionType } from './components/RegionSelector';
 import { clsx } from 'clsx';
 
 const engine = AudioEngine.getInstance();
@@ -103,6 +104,9 @@ function App() {
     const [arpEnabled, setArpEnabled] = useState(false);
     const [arpRate, setArpRate] = useState<ArpRate>('8n');
     const [arpPattern, setArpPattern] = useState<ArpPattern>('up');
+    const [scaleRegion, setScaleRegion] = useState<RegionType>('whole');
+    const [chordRegion, setChordRegion] = useState<RegionType>('whole');
+    const [arpRegion, setArpRegion] = useState<RegionType>('whole');
     const [tracks, setTracks] = useState<LoopTrack[]>(engine.tracks);
     const [, setForceUpdate] = useState(0);
     const [ghostNotesEnabled, setGhostNotesEnabled] = useState(true);
@@ -296,6 +300,10 @@ function App() {
                     toneBase={tone}
                     scaleType={scaleType}
                     chordType={chordType}
+                    scaleRegion={scaleRegion}
+                    chordRegion={chordRegion}
+                    arpRegion={arpRegion}
+                    arpEnabled={arpEnabled}
                     onNoteActive={() => { }}
                     onEffectSwap={handleEffectSwap}
                     onModulationUpdate={(factors) => {
@@ -447,7 +455,7 @@ function App() {
             )}>
                 <div className={clsx("pointer-events-auto", !isLandscape && "w-full max-w-[500px]")}>
                     <GlassPanel
-                        title="HEXSYNTH"
+                        title="HEX-SYNTH"
                         icon={SettingsIcon}
                         isOpen={isSettingsOpen}
                         onToggle={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -682,9 +690,13 @@ function App() {
                                     <div className={clsx("overflow-hidden transition-all duration-300 ease-in-out", isCompToolsOpen ? "max-h-60 opacity-100" : "max-h-0 opacity-0")}>
                                         <div className="pt-5 pb-1 space-y-3">
                                             {/* Scale & Chord Row */}
+                                            {/* Scale & Chord Row */}
                                             <div className="flex gap-4">
                                                 <div className="flex-1 space-y-1">
-                                                    <label className="text-[8px] uppercase text-gray-500 block">Scale</label>
+                                                    <div className="flex justify-between items-center">
+                                                        <label className="text-[8px] uppercase text-gray-500 block">Scale</label>
+                                                        <RegionSelector value={scaleRegion} onChange={setScaleRegion} size={14} />
+                                                    </div>
                                                     <select
                                                         value={scaleType}
                                                         onChange={(e) => setScaleType(e.target.value as ScaleType)}
@@ -696,7 +708,10 @@ function App() {
                                                     </select>
                                                 </div>
                                                 <div className="flex-1 space-y-1">
-                                                    <label className="text-[8px] uppercase text-gray-500 block">Chord</label>
+                                                    <div className="flex justify-between items-center">
+                                                        <label className="text-[8px] uppercase text-gray-500 block">Chord</label>
+                                                        <RegionSelector value={chordRegion} onChange={setChordRegion} size={14} />
+                                                    </div>
                                                     <select
                                                         value={chordType}
                                                         onChange={(e) => setChordType(e.target.value as ChordType)}
@@ -720,7 +735,10 @@ function App() {
                                             {/* Arpeggiator Section */}
                                             <div className="border-t border-white/5 pt-2">
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <label className="text-[8px] uppercase text-gray-500 tracking-wider">Arpeggiator</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <label className="text-[8px] uppercase text-gray-500 tracking-wider">Arpeggiator</label>
+                                                        <RegionSelector value={arpRegion} onChange={setArpRegion} size={14} />
+                                                    </div>
                                                     <button
                                                         onClick={() => {
                                                             const newVal = !arpEnabled;

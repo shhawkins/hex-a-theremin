@@ -301,30 +301,20 @@ export class AudioEngine {
     currentInput.connect(this.mainBus);
   }
 
-  public startNote(touchId: number, frequency: number | number[], volume: number) {
+  public startNote(touchId: number, frequency: number | number[], volume: number, useArp?: boolean) {
     if (this.voices.has(touchId)) {
       this.updateNote(touchId, frequency, volume);
       return;
     }
 
     const freqs = Array.isArray(frequency) ? frequency : [frequency];
+    const shouldArp = useArp !== undefined ? useArp : this.arpeggiator.getEnabled();
 
-    if (this.arpeggiator.getEnabled()) {
+    if (shouldArp) {
       // Add to arp
       freqs.forEach(f => this.arpeggiator.addNote(f));
-      // We still track "voice" as strictly the touch existence for cleanup, 
-      // but we don't hold a sustaining audio voice.
-      // We put a dummy placeholder or nothing? 
-      // Better: we map touchId to the specific frequencies so we can remove them later.
-      // Let's store them in `voices` but as empty? No `voices` expects `Voice`.
-      // Let's add a separate map for arp touches? 
-      // Or: `Voice` class can have a "silent" mode?
-      // Hack: We DO NOT add a voice to `this.voices` if arp is on?
-      // But then `updateNote` won't find it.
-      // We need to track which freqs this touch added.
-
+      // Track as Arp touch
       this.activeArpTouches.set(touchId, freqs);
-
       return;
     }
 
@@ -342,7 +332,8 @@ export class AudioEngine {
   public updateNote(touchId: number, frequency: number | number[], volume: number) {
     const freqs = Array.isArray(frequency) ? frequency : [frequency];
 
-    if (this.arpeggiator.getEnabled()) {
+    // Check if this touch is active in Arp
+    if (this.activeArpTouches.has(touchId)) {
       const oldFreqs = this.activeArpTouches.get(touchId);
       if (oldFreqs) {
         oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
@@ -367,14 +358,13 @@ export class AudioEngine {
   }
 
   public stopNote(touchId: number) {
-    if (this.arpeggiator.getEnabled()) {
+    if (this.activeArpTouches.has(touchId)) {
       const oldFreqs = this.activeArpTouches.get(touchId);
       if (oldFreqs) {
         oldFreqs.forEach(f => this.arpeggiator.removeNote(f));
       }
       this.activeArpTouches.delete(touchId);
-      // Also ensure no stray normal voices if we switched modes?
-      // Fall through to check voices map just in case.
+      return;
     }
 
     const voices = this.voices.get(touchId);
