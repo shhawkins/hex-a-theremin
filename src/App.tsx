@@ -148,6 +148,21 @@ function App() {
     const hexScale = isMobile ? 0.28 : isLandscape ? 0.33 : 0.32;
     const hexRadius = Math.min(dimensions.width, dimensions.height) * hexScale;
 
+    const visualizerCenter = useMemo(() => {
+        if (isMobile) {
+            // Mobile: top-24, 220px height -> Center Y = 96 + 110 = 206
+            return { x: dimensions.width / 2, y: 206 };
+        }
+        if (isLandscape) {
+            // Landscape: top-[400px] left-4, 240px size -> Y=520, X=136
+            return { x: 136, y: 520 };
+        }
+        // iPad Portrait: top-10 right-8, 200px size -> Y=140, X = width - 32 - 100
+        return { x: dimensions.width - 132, y: 140 };
+    }, [dimensions, isMobile, isLandscape]);
+
+    const activeEffectTypes = useMemo(() => effects.filter((e): e is string => !!e), [effects]);
+
     // Position hexagon based on layout
     const center = getCenter(dimensions.width, dimensions.height);
 
@@ -284,21 +299,18 @@ function App() {
                 />
             </div>
 
-            {/* Harmony Visualizer - Background/Responsive Placement */}
+            {/* Harmony Visualizer - Full Screen Bloom with Positioned Center */}
             <div className={clsx(
-                "absolute pointer-events-none transition-all duration-500 z-0",
-                showVisualizer ? "opacity-60" : "opacity-0",
-                isMobile
-                    ? "left-1/2 top-24 -translate-x-1/2 w-[220px] h-[220px]" // Mobile: Fixed top (PERFECT)
-                    : isLandscape
-                        ? "top-[400px] left-4 w-[240px] h-[240px]" // Landscape: Lower (halfway adjustment)
-                        : "top-10 right-8 w-[200px] h-[200px]" // iPad Portrait: More margin top/right
-            )}
-            >
+                "fixed inset-0 pointer-events-none transition-opacity duration-1000 z-0",
+                showVisualizer ? "opacity-100" : "opacity-0"
+            )}>
                 <HarmonyVisualizer
                     engine={engine}
-                    width={isMobile ? 220 : (isLandscape ? 240 : 200)}
-                    height={isMobile ? 220 : (isLandscape ? 240 : 200)}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    centerX={visualizerCenter.x}
+                    centerY={visualizerCenter.y}
+                    activeEffectTypes={activeEffectTypes}
                 />
             </div>
 
