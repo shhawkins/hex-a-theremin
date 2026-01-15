@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
-import { AudioEngine, type VoiceType, type LoopTrack } from './audio/AudioEngine';
 import { HexagonInstrument } from './components/HexagonInstrument';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { OnboardingModal } from './components/OnboardingModal';
 import { RotaryDial } from './components/RotaryDial';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { AudioEngine, type VoiceType, type LoopTrack } from './audio/AudioEngine';
 import { EFFECT_TYPES, type EffectType } from './audio/effects';
 import type { Point } from './utils/geometry';
 import { Mic, Play, Square, Settings as SettingsIcon, Ghost, Activity, Trash2, ChevronDown, Sliders, RefreshCcw } from 'lucide-react';
@@ -83,6 +83,9 @@ function App() {
     const [expandedControlId, setExpandedControlId] = useState<number | null>(null);
     const [paramModulations, setParamModulations] = useState<Record<string, { x: boolean, y: boolean }>>({});
 
+    // Real-time Visual Modulation State (Ref to avoid re-renders, read in render loop)
+    const visualModRef = useRef({ vol: 1.0, tone: 1.0 });
+
     useEffect(() => {
         if (started) {
             INITIAL_EFFECTS.forEach((eff, i) => engine.setEffect(i, eff));
@@ -102,7 +105,7 @@ function App() {
     const isPortraitTablet = !isMobile && !isLandscape;
 
     // Hexagon sizing: maximize while leaving room for UI
-    const hexScale = isMobile ? 0.28 : isLandscape ? 0.38 : 0.32;
+    const hexScale = isMobile ? 0.28 : isLandscape ? 0.33 : 0.32;
     const hexRadius = Math.min(dimensions.width, dimensions.height) * hexScale;
 
     // Position hexagon based on layout
@@ -111,7 +114,7 @@ function App() {
             ? dimensions.width / 2 + 100 // Shift right for sidebar in landscape
             : dimensions.width / 2,
         y: isMobile
-            ? dimensions.height / 2 + 80
+            ? dimensions.height / 2 + 120
             : isPortraitTablet
                 ? dimensions.height / 2 + 105 // Shift down for top panel in portrait tablet
                 : dimensions.height / 2
@@ -161,6 +164,8 @@ function App() {
         return positions;
     }, [center, hexRadius, isMobile]);
 
+    // Modulated Params removed from here as we use Ref now
+
     if (!started) {
         return <OnboardingModal onStart={handleStart} />;
     }
@@ -200,7 +205,11 @@ function App() {
                     volMod={volMod}
                     toneMod={toneMod}
                     toneBase={tone}
+                    toneBase={tone}
                     onNoteActive={() => { }}
+                    onModulationUpdate={(factors) => {
+                        visualModRef.current = factors;
+                    }}
                     center={center}
                 />
             </div>
@@ -256,7 +265,7 @@ function App() {
                                 {isMobile && (
                                     <button
                                         onClick={() => setExpandedControlId(expandedControlId === i ? null : i)}
-                                        className="text-gray-500 hover:text-white/80 transition-colors p-0.5 active:scale-90"
+                                        className="text-gray-500 hover:text-white/80 transition-colors p-2 -m-1 active:scale-90 flex items-center justify-center w-8 h-6"
                                     >
                                         <ChevronDown
                                             size={10}
@@ -403,13 +412,14 @@ function App() {
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryDial
                                             label="VOL"
-                                            value={Math.round(masterVolume * 100).toString()}
+                                            value={Math.round(masterVolume * visualModRef.current.vol * 100).toString()}
                                             options={[]}
                                             onChange={() => { }}
                                             continuous={true}
                                             min={0}
                                             max={1}
                                             val={masterVolume}
+                                            visualOverride={masterVolume * visualModRef.current.vol}
                                             onValueChange={setMasterVolume}
                                             size={32}
                                         />
@@ -433,13 +443,14 @@ function App() {
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryDial
                                             label="TONE"
-                                            value={Math.round(tone * 100).toString()}
+                                            value={Math.round(tone * visualModRef.current.tone * 100).toString()}
                                             options={[]} // Continuous dial simulation
                                             onChange={() => { /* handled by onValueChange */ }}
                                             continuous={true}
                                             min={0}
                                             max={1}
                                             val={tone}
+                                            visualOverride={tone * visualModRef.current.tone}
                                             onValueChange={(v) => {
                                                 setTone(v);
                                             }}

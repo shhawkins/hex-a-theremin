@@ -12,11 +12,13 @@ interface RotaryDialProps {
   max?: number;
   val?: number;
   onValueChange?: (value: number) => void;
+  visualOverride?: number;
 }
 
 export const RotaryDial: React.FC<RotaryDialProps> = ({
   value, options, onChange, label, size = 60,
-  continuous = false, min = 0, max = 1, val = 0, onValueChange
+  continuous = false, min = 0, max = 1, val = 0, onValueChange,
+  visualOverride
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [startY, setStartY] = useState(0);
@@ -71,8 +73,10 @@ export const RotaryDial: React.FC<RotaryDialProps> = ({
   };
 
   let rotation = -135;
+  const renderVal = (continuous && visualOverride !== undefined) ? visualOverride : val;
+
   if (continuous) {
-    rotation = -135 + ((val - min) / (max - min)) * 270;
+    rotation = -135 + ((renderVal - min) / (max - min)) * 270;
   } else {
     rotation = -135 + (currentIndex / (options.length - 1)) * 270;
   }
@@ -105,7 +109,7 @@ export const RotaryDial: React.FC<RotaryDialProps> = ({
             const portion = i / (displayTicks.length - 1);
             rot = -135 + portion * 270;
             // Highlight up to current value?
-            const currentPortion = (val - min) / (max - min);
+            const currentPortion = (renderVal - min) / (max - min);
             isSelected = portion <= currentPortion + 0.01;
           } else {
             rot = -135 + (i / (options.length - 1)) * 270;
@@ -142,12 +146,6 @@ export const RotaryDial: React.FC<RotaryDialProps> = ({
           />
         </div>
 
-        {/* Center Value Display */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-[10px] items-center justify-center font-bold text-gray-200 font-mono z-10 transition-colors group-hover:text-white">
-            {value}
-          </div>
-        </div>
       </div>
     </div>
   );

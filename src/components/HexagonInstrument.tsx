@@ -20,6 +20,7 @@ interface HexagonInstrumentProps {
   toneMod: { x: boolean, y: boolean };
   toneBase: number;
   onNoteActive: (color: string) => void;
+  onModulationUpdate?: (factors: { vol: number, tone: number }) => void;
   center?: { x: number, y: number };
 }
 
@@ -44,7 +45,9 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
   volMod,
   toneMod,
   toneBase,
+
   onNoteActive,
+  onModulationUpdate,
   center
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -161,6 +164,10 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
       setActiveTouches(prev => {
         const next = new Map(prev);
         next.delete(e.pointerId);
+
+        if (next.size === 0 && onModulationUpdate) {
+          onModulationUpdate({ vol: 1, tone: 1 });
+        }
         return next;
       });
     }
@@ -210,6 +217,8 @@ export const HexagonInstrument: React.FC<HexagonInstrumentProps> = ({
     // If modulation is on, we scale the Base Tone.
     // If Base Tone is 1.0 (Open), and mod is 0.5, effective is 0.5.
     const finalTone = toneBase * toneFactor;
+
+    if (onModulationUpdate) onModulationUpdate({ vol: volFactor, tone: toneFactor });
 
     engine.setTone(finalTone);
     engine.startNote(id, freq, vol);

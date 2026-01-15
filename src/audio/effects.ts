@@ -3,12 +3,12 @@ import * as Tone from 'tone';
 export type EffectType =
   | 'AutoFilter' | 'AutoPanner' | 'AutoWah' | 'BitCrusher' | 'Chebyshev'
   | 'Chorus' | 'Distortion' | 'FeedbackDelay' | 'JCReverb' | 'FrequencyShifter'
-  | 'Phaser' | 'PingPongDelay' | 'StereoWidener' | 'PitchShift' | 'Tremolo' | 'Vibrato';
+  | 'Phaser' | 'PingPongDelay' | 'StereoWidener' | 'Tremolo' | 'Vibrato';
 
 export const EFFECT_TYPES: EffectType[] = [
   'AutoFilter', 'AutoPanner', 'AutoWah', 'BitCrusher', 'Chebyshev',
   'Chorus', 'Distortion', 'FeedbackDelay', 'JCReverb', 'FrequencyShifter',
-  'Phaser', 'PingPongDelay', 'StereoWidener', 'PitchShift', 'Tremolo', 'Vibrato'
+  'Phaser', 'PingPongDelay', 'StereoWidener', 'Tremolo', 'Vibrato'
 ];
 
 export function createEffect(type: EffectType): Tone.ToneAudioNode {
@@ -30,7 +30,7 @@ export function createEffect(type: EffectType): Tone.ToneAudioNode {
     case 'Phaser': return new Tone.Phaser({ wet: 0 });
     case 'PingPongDelay': return new Tone.PingPongDelay({ wet: 0, delayTime: 0.25, feedback: 0.5 });
     case 'StereoWidener': return new Tone.StereoWidener({ wet: 0 });
-    case 'PitchShift': return new Tone.PitchShift({ wet: 0 });
+
     case 'Tremolo': return new Tone.Tremolo({ wet: 0 }).start();
     case 'Vibrato': return new Tone.Vibrato({ wet: 0 });
     default: return new Tone.Gain(1);
@@ -98,9 +98,7 @@ export const EFFECT_PARAMS: Record<EffectType, { name: string; key: string; min:
   'StereoWidener': [
     { name: 'Width', key: 'width', min: 0, max: 1, step: 0.05 }
   ],
-  'PitchShift': [
-    { name: 'Pitch', key: 'pitch', min: -12, max: 12, step: 1, suffix: 'st' }
-  ],
+
   'Tremolo': [
     { name: 'Frequency', key: 'frequency', min: 0.1, max: 20, step: 0.1, suffix: 'Hz' },
     { name: 'Depth', key: 'depth', min: 0, max: 1, step: 0.05 }
