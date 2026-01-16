@@ -36,16 +36,20 @@ const GlassPanel = ({
     children,
     className,
     title,
+    subtitle,
     icon: Icon,
     isOpen,
-    onToggle
+    onToggle,
+    headerRight
 }: {
     children: React.ReactNode,
     className?: string,
     title: string,
+    subtitle?: string,
     icon?: any,
     isOpen: boolean,
-    onToggle: () => void
+    onToggle: () => void,
+    headerRight?: React.ReactNode
 }) => (
     <div className={clsx(
         "glass-panel rounded-lg transition-all duration-200 pointer-events-auto",
@@ -56,15 +60,23 @@ const GlassPanel = ({
             className={clsx("panel-header p-3 flex items-center justify-between group rounded-t-lg", !isOpen && "rounded-lg border-b-0")}
             onClick={onToggle}
         >
-            <div className="flex items-center gap-2 text-gray-300 font-sans tracking-wide text-[10px] font-semibold group-hover:text-white transition-colors uppercase">
-                {Icon && <Icon size={12} className="text-gray-400 group-hover:text-hex-accent" />}
-                <span>{title}</span>
+            <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-gray-300 font-sans tracking-wide text-[10px] font-semibold group-hover:text-white transition-colors uppercase">
+                    {Icon && <Icon size={12} className="text-gray-400 group-hover:text-hex-accent" />}
+                    <span>{title}</span>
+                </div>
+                {subtitle && (
+                    <span className="text-[8px] tracking-[0.2em] text-hex-accent uppercase font-medium opacity-70">{subtitle}</span>
+                )}
             </div>
-            <div className={clsx(
-                "text-gray-600 transition-transform duration-200",
-                isOpen && "rotate-180"
-            )}>
-                <ChevronDown size={12} />
+            <div className="flex items-center gap-2">
+                {headerRight}
+                <div className={clsx(
+                    "text-gray-600 transition-transform duration-200",
+                    isOpen && "rotate-180"
+                )}>
+                    <ChevronDown size={12} />
+                </div>
             </div>
         </div>
         <div className={clsx("collapsible-content px-3 border-t border-transparent", isOpen ? "expanded pb-3 border-hex-border" : "collapsed")}>
@@ -81,9 +93,9 @@ const getCenter = (w: number, h: number) => {
     return {
         x: isLandscape ? w / 2 + 100 : w / 2,
         y: isMobile
-            ? h / 2 + 150
+            ? h / 2 + 120 // Shifted up from 150 for bottom margin
             : isPortraitTablet
-                ? h / 2 + 180
+                ? h / 2 + 120 // Shifted up from 180 for bottom margin
                 : h / 2
     };
 };
@@ -294,17 +306,6 @@ function App() {
                     isReturningUser={started ? false : isReturningUser}
                     skipDelay={showHelpModal}
                 />
-            )}
-
-            {/* Help Button - Upper Right */}
-            {started && !showHelpModal && (
-                <button
-                    onClick={() => setShowHelpModal(true)}
-                    className="fixed top-4 right-4 z-40 w-8 h-8 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:bg-black/60 hover:border-white/20 transition-all backdrop-blur-sm"
-                    title="Help"
-                >
-                    <HelpCircle size={14} />
-                </button>
             )}
 
             {/* Background */}
@@ -530,9 +531,21 @@ function App() {
                 <div className={clsx("pointer-events-auto", !isLandscape && "w-full max-w-[500px]")}>
                     <GlassPanel
                         title="HEX-SYNTH"
+                        subtitle="Theremin Synthesizer"
                         icon={SettingsIcon}
                         isOpen={isSettingsOpen}
                         onToggle={() => setIsSettingsOpen(!isSettingsOpen)}
+                        headerRight={
+                            started && !showHelpModal ? (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowHelpModal(true); }}
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-gray-500 hover:text-hex-accent transition-colors"
+                                    title="Help"
+                                >
+                                    <HelpCircle size={12} />
+                                </button>
+                            ) : null
+                        }
                     >
                         <div className="py-1.5 font-mono transition-all">
                             <div className="flex flex-col gap-2">
